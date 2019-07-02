@@ -1,0 +1,137 @@
+---
+title: "One Medical"
+author: "Sanjay Basu"
+date: "7/2/2019"
+output: pdf_document
+---
+
+##Import dependencies/packages
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages('dplyr')
+install.packages('readr')
+library(dplyr)
+library(readr)
+```
+
+##Import datasets
+
+SpaceX members, medical claims, and pharmacy claims
+
+```{r warning = FALSE, message = FALSE}
+setwd("~/Box/Analytics Team/Research/Research projects/One medical")
+mbr <- read_csv("spacex_members.csv")
+clm <- read_csv("spacex_claims.csv")
+rx <- read_csv("spacex_pharmacy.csv")
+```
+
+
+##Member org
+
+Reorganize member data to enable eligibility criteria application
+requirement of continuous enrollment 
+
+```{r elig mbr}
+mbr_sub = mbr %>%
+  mutate(personid = `Analytics Member Months Person ID`) %>%
+  group_by(personid) %>%
+  mutate(start = min(`Analytics Member Months Start Date`),
+         end = max(`Analytics Member Months End Date`),
+         age = mean(`Analytics Member Months Age`),
+         female = (`Analytics Member Months Gender`==F)) %>%
+  filter(start=="2016-01-01",
+         end=="2019-12-31") %>%
+  select(age, female, personid) %>%
+  distinct()
+```
+
+##Recode claims $ values
+
+remove dollar signs and commas from dollar amounts in the claims data
+
+```{r $ recode clm}
+clm_dol = clm
+clm_dol$`Metaclaims Analytics Medical Paid Amount Ch` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Paid Amount Ch`))
+clm_dol$`Metaclaims Analytics Medical Copay Amount` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Copay Amount`))
+clm_dol$`Metaclaims Analytics Medical Coinsurance Amount` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Coinsurance Amount`))
+clm_dol$`Metaclaims Analytics Medical Deductible Amount` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Deductible Amount`))
+```
+
+##Inclusion criteria application
+Unique combination of NPI / Tax ID should be used to identify OM claims 
+requirement of E&M visit from any provider 
+OM attribution through E&M visit with One Medical
+
+
+```{r elig clm}
+clm_sub = clm_dol %>%
+  mutate(personid = (`Metaclaims Analytics Medical Person ID`),
+         om_flag = 
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460695495")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467701821))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460741732")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073862256))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="362169147")&(`Metaclaims Analytics Medical Billing Prov Npi`==1336709112))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="814542216")&(`Metaclaims Analytics Medical Billing Prov Npi`==1518438712))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="383906267")&(`Metaclaims Analytics Medical Billing Prov Npi`==1528538774))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="471708588")&(`Metaclaims Analytics Medical Billing Prov Npi`==1184014854))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="271346767")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467781641))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="911942315")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073553947))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812141065")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467800383))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="452282261")&(`Metaclaims Analytics Medical Billing Prov Npi`==1962798645))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="273009385")&(`Metaclaims Analytics Medical Billing Prov Npi`==1861709487))|
+          ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812980907")&(`Metaclaims Analytics Medical Billing Prov Npi`==1598214397))|
+          ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="270243800")&(`Metaclaims Analytics Medical Billing Prov Npi`==1144457151))|
+         ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="020619758")&(`Metaclaims Analytics Medical Billing Prov Npi`==1497786883))|
+          ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="461773122")&(`Metaclaims Analytics Medical Billing Prov Npi`==1508103169))|
+          ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1417382102))|
+          ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1922470392))) %>%
+  add_count(personid, `Metaclaims Analytics Medical Diag01`) %>%
+  group_by(personid) %>%
+  filter(any(((`Metaclaims Analytics Medical Procedure Code`>=99201)&(`Metaclaims Analytics Medical Procedure Code`<=99205))|
+           (`Metaclaims Analytics Medical Procedure Code`>=99211)&(`Metaclaims Analytics Medical Procedure Code`<=99215))) %>%
+  mutate(om_flag = max(om_flag),
+         diag1 = `Metaclaims Analytics Medical Diag01`[n == max(n)][1],
+         cost = sum(`Metaclaims Analytics Medical Paid Amount Ch`),
+         copay = sum(`Metaclaims Analytics Medical Copay Amount`),
+         coins = sum(`Metaclaims Analytics Medical Coinsurance Amount`),
+         deduct = sum(`Metaclaims Analytics Medical Deductible Amount`)) %>%
+  select(personid,om_flag,diag1,cost,copay,coins,deduct) %>%
+  distinct()
+```
+
+##Pharmacy claims org
+
+```{r elig rx}
+rx_dol = rx
+rx_dol$`Analytics Claims Pharmacy Paid Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Paid Amount`))
+rx_dol$`Analytics Claims Pharmacy Copay Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Copay Amount`))
+rx_dol$`Analytics Claims Pharmacy Coinsurance Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Coinsurance Amount`))
+rx_dol$`Analytics Claims Pharmacy Deductible Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Deductible Amount`))
+rx_sub = rx_dol %>%
+  mutate(personid = `Analytics Claims Pharmacy Person ID`) %>%
+  group_by(personid) %>%
+  mutate(cost = sum(`Analytics Claims Pharmacy Paid Amount`),
+         copay = sum(`Analytics Claims Pharmacy Copay Amount`),
+         coins = sum(`Analytics Claims Pharmacy Coinsurance Amount`),
+         deduct = sum(`Analytics Claims Pharmacy Deductible Amount`)) %>%
+  select(personid,cost,copay,coins,deduct) %>%
+  distinct()
+```
+
+##Merge data
+
+by person id, left joining to isolate to eligible mbrs only
+
+```{r merge}
+spacex_dat = mbr_sub %>%
+  left_join(clm_sub, by="personid") %>%
+  left_join(rx_sub, by = "personid")
+```
+
+##Matching
+
+coarsened exact match on all features
+
+```{r matching}
+
+```
