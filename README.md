@@ -1,5 +1,4 @@
-# onemedical
-SpaceX / Collective Health / One Medical - Cost of Care Study
+# SpaceX / Collective Health / One Medical - Cost of Care Study
 
 
 Base key outcome variables vs. control
