@@ -8,13 +8,17 @@ output: pdf_document
 ##Import dependencies/packages
 
 ```{r setup, include=FALSE}
+rm(list=ls())
 knitr::opts_chunk$set(echo = TRUE)
-install.packages('dplyr')
+install.packages('tidyverse')
+install.packages('lubridate')
 install.packages('readr')
 install.packages('tableone')
-library(dplyr)
+library(tidyverse)
+library(lubridate)
 library(readr)
 library(tableone)
+library(tools)
 ```
 
 ##Import datasets
@@ -26,57 +30,98 @@ setwd("~/Box/Analytics Team/Research/Research projects/One medical")
 mbr <- read_csv("spacex_members.csv")
 clm <- read_csv("spacex_claims.csv")
 rx <- read_csv("spacex_pharmacy.csv")
+ctr <- read_csv("SpaceX Health Center Claims 1016 to 1217.csv")
+ctr2 <- read_csv("SpaceX Health Center Claims 0116 to 0916.csv")
 ```
 
+## custom functions
 
-##Member org
+```{r cust}
 
-Reorganize member data to enable eligibility criteria application
-requirement of continuous enrollment 
-
-```{r elig mbr}
-mbr_sub = mbr %>%
-  mutate(personid = `Analytics Member Months Person ID`) %>%
-  group_by(personid) %>%
-  mutate(start = min(`Analytics Member Months Start Date`),
-         end = max(`Analytics Member Months End Date`),
-         age = mean(`Analytics Member Months Age`),
-         female = (`Analytics Member Months Gender`=='F')) %>%
-  filter(start=="2016-01-01",
-         end=="2019-12-31") %>%
-  select(age, female, personid) %>%
-  distinct()
-```
-
-##Recode claims $ values
-
-remove dollar signs and commas from dollar amounts in the claims data
-
-```{r $ recode clm}
-clm_dol = clm
-clm_dol$`Metaclaims Analytics Medical Paid Amount Ch` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Paid Amount Ch`))
-clm_dol$`Metaclaims Analytics Medical Copay Amount` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Copay Amount`))
-clm_dol$`Metaclaims Analytics Medical Coinsurance Amount` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Coinsurance Amount`))
-clm_dol$`Metaclaims Analytics Medical Deductible Amount` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Deductible Amount`))
-```
-
-##Inclusion criteria application
-
-Unique combination of NPI / Tax ID should be used to identify OM claims 
-Inclusion criteria: E&M visit from any provider 
-OM attribution:
-- Most Evaluation and Management (E&M) Visits – The highest percentage of primary care E&M visits
-- E&Ms included: 99201 – 99205, 99211 - 99215
-    
-```{r elig clm}
 getmode <- function(v) {
    force(v)
    uniqv <- unique(v)
    uniqv[which.max(tabulate(match(v, uniqv)))]
 }
 
+```
+
+
+##Add in OM Center claims to CH claims
+
+add in only those not already in CH dataset [overlap in ctr2 file]
+need to update ctr2 file to include age, gender, principal diag [currently missing]
+
+```{r center}
+ctr_sub = ctr
+ctr_sub$Name = tolower(ctr$Name)
+ctr_sub$Name = toTitleCase(ctr$Name)
+ctr_sub$`Primary Diagnosis` = as.character(gsub("[\\.]", "", ctr_sub$`Primary Diagnosis`))
+
+ctr_sub = ctr_sub %>%
+  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
+  mutate(dos = mdy(DOS)) %>%
+  group_by(firstname,lastname,dos)%>%
+  mutate(age = mean(Age),
+         female= getmode((Gender=='F')),
+         om_flag = 1,
+         em_flag = ((CPT=='99201')|
+                    (CPT=='99202')|
+                    (CPT=='99203')|
+                    (CPT=='99204')|
+                    (CPT=='99205')|
+                    (CPT=='99211')|
+                    (CPT=='99212')|
+                    (CPT=='99213')|
+                    (CPT=='99214')|
+                    (CPT=='99215')),
+         diag1 = getmode(`Primary Diagnosis`),
+         pos = "Office Visits - PCP",
+         cost_md = sum(Payments)) %>%
+  select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,cost_md) %>%
+  distinct()
+
+ctr2_sub = ctr2
+ctr2_sub$Name = tolower(ctr2_sub$`Patient Name`)
+ctr2_sub$Name = toTitleCase(ctr2_sub$Name)
+ctr2_sub$`Primary Diagnosis` = "NA"
+ctr2_sub = ctr2_sub[ctr2_sub$`Payer Name`!="Collective Health",]
+ctr2_sub$cost_md = as.numeric(gsub("[\\$,]", "", ctr2_sub$Charge))
+
+ctr2_sub = ctr2_sub %>%
+  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
+  mutate(dos = mdy(`Ledger Date`)) %>%
+  group_by(firstname,lastname,dos)%>%
+  mutate(age = "NA",
+         female= "NA",
+         om_flag = 1,
+         em_flag = ((`Procedure Code`=='99201')|
+                    (`Procedure Code`=='99202')|
+                    (`Procedure Code`=='99203')|
+                    (`Procedure Code`=='99204')|
+                    (`Procedure Code`=='99205')|
+                    (`Procedure Code`=='99211')|
+                    (`Procedure Code`=='99212')|
+                    (`Procedure Code`=='99213')|
+                    (`Procedure Code`=='99214')|
+                    (`Procedure Code`=='99215')),
+         diag1 = "NA",
+         pos = "Office Visits - PCP",
+         cost_md = sum(cost_md)) %>%
+  select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,cost_md) %>%
+  distinct()
+
+clm_dol = clm
+clm_dol$`Metaclaims Analytics Medical Paid Amount Ch` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Paid Amount Ch`))
+
 clm_sub = clm_dol %>%
   mutate(personid = (`Metaclaims Analytics Medical Person ID`),
+         age = interval(mdy(`Metaclaims Analytics Medical Service Date Start Ch Date`), mdy(`Metaclaims Analytics Medical Date of Birth Date`))/years(1),
+         female = (`Metaclaims Analytics Medical Gender`=="F"),
+         firstname = `Metaclaims Analytics Medical First Name`,
+         lastname = `Metaclaims Analytics Medical Last Name`,
+         pos = `Metaclaims Analytics Medical Service Category Detail Ch`,
+         dos = `Metaclaims Analytics Medical Service Date Start Ch Date`,
          om_flag = ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460695495")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467701821))|
                    ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460741732")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073862256))|
                    ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="362169147")&(`Metaclaims Analytics Medical Billing Prov Npi`==1336709112))|
@@ -104,86 +149,128 @@ clm_sub = clm_dol %>%
                     (`Metaclaims Analytics Medical Procedure Code`=='99213')|
                     (`Metaclaims Analytics Medical Procedure Code`=='99214')|
                     (`Metaclaims Analytics Medical Procedure Code`=='99215'))) %>%
-  group_by(personid) %>%
+  group_by(personid,pos,dos) %>%
+  summarise(om_flag = max(om_flag),
+            em_flag = max(em_flag),
+            diag1 = getmode(`Metaclaims Analytics Medical Principal Diag`),
+            cost_md = sum(`Metaclaims Analytics Medical Paid Amount Ch`)) %>%
+  select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,cost_md) %>%
+  ungroup() 
+
+```
+
+
+## OM attribution and utilization counts
+
+Unique combination of NPI / Tax ID should be used to identify OM claims 
+OM attribution for most Evaluation and Management (E&M) Visits – The highest percentage of primary care E&M visits: 99201 – 99205, 99211 - 99215
+Util counts with replacement of NAs with 0 by service category
+
+    
+```{r elig clm}
+
+clm_tot = clm_sub %>%
+  full_join(ctr_sub, by=c("firstname","lastname","age","female")) %>%
+  full_join(ctr2_sub, by =c("firstname", "lastname")) # when OM data updated, also join by age, female
+  
+clm_tot = clm_tot %>%
+  group_by(firstname, lastname) %>%
   filter(any(em_flag==1)) %>%
   summarise(om_flag = getmode(om_flag[em_flag==1]),
-            diag1 = getmode(`Metaclaims Analytics Medical Diag01`),
-            cost_md = sum(`Metaclaims Analytics Medical Paid Amount Ch`),
-            copay_md = sum(`Metaclaims Analytics Medical Copay Amount`),
-            coins_md = sum(`Metaclaims Analytics Medical Coinsurance Amount`),
-            deduct_md = sum(`Metaclaims Analytics Medical Deductible Amount`),
-            count_er = sum(`Metaclaims Analytics Medical Service Category Detail Ch`=="Emergency Room"),
-            cost_er = sum(`Metaclaims Analytics Medical Paid Amount Ch`[`Metaclaims Analytics Medical Service Category Detail Ch`=="Emergency Room"]),
-            count_hosp = sum(`Metaclaims Analytics Medical Service Category Detail Ch`=="Inpatient Visits"),
-            cost_hosp = sum(`Metaclaims Analytics Medical Paid Amount Ch`[`Metaclaims Analytics Medical Service Category Detail Ch`=="Inpatient Visits"]),
-            count_pcp = sum((`Metaclaims Analytics Medical Service Category Detail Ch`=="Office Visits - PCP")|(`Metaclaims Analytics Medical Service Category Detail Ch`=="Preventive Visits - PCP")),
-            cost_pcp = sum((`Metaclaims Analytics Medical Paid Amount Ch`[`Metaclaims Analytics Medical Service Category Detail Ch`=="Office Visits - PCP"|`Metaclaims Analytics Medical Service Category Detail Ch`=="Preventive Visits - PCP"])),
-            count_spec = sum((`Metaclaims Analytics Medical Service Category Detail Ch`=="Office Visits - Specialist")|(`Metaclaims Analytics Medical Service Category Detail Ch`=="Preventive Visits - Specialist")),
-            cost_spec = sum((`Metaclaims Analytics Medical Paid Amount Ch`[`Metaclaims Analytics Medical Service Category Detail Ch`=="Office Visits - Specialist"|`Metaclaims Analytics Medical Service Category Detail Ch`=="Preventive Visits - Specialist"]))) %>%
-  select(personid,om_flag,diag1,cost_md,copay_md,coins_md,deduct_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec) %>%
+            diag1 = getmode(diag1),
+            cost_md = sum(cost_md),
+            count_er = sum(pos=="Emergency Room"),
+            cost_er = sum(cost_md[pos=="Emergency Room"]),
+            count_hosp = sum(pos=="Inpatient Visits"),
+            cost_hosp = sum(cost_md[pos=="Inpatient Visits"]),
+            count_pcp = sum((pos=="Office Visits - PCP")|(pos=="Preventive Visits - PCP")),
+            cost_pcp = sum((cost_md[pos=="Office Visits - PCP"|pos=="Preventive Visits - PCP"])),
+            count_spec = sum((pos=="Office Visits - Specialist")|(pos=="Preventive Visits - Specialist")),
+            cost_spec = sum((cost_md[pos=="Office Visits - Specialist"|pos=="Preventive Visits - Specialist"])),
+            cost_pcp = replace_na(cost_pcp,0),
+            cost_spec = replace_na(cost_spec,0)) %>%
+  select(firstname,lastname,age, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec) %>%
   distinct()
 ```
 
-##Pharmacy claims org
+
+##Member org
+
+Reorganize member data to enable eligibility criteria application
+requirement of continuous enrollment 
+
+```{r elig mbr}
+mbr_sub = mbr %>%
+  mutate(personid = `Analytics Member Months Person ID`) %>%
+  group_by(personid) %>%
+  mutate(start = min(`Analytics Member Months Start Date`),
+         end = max(`Analytics Member Months End Date`),
+         age = mean(`Analytics Member Months Age`),
+         female = (`Analytics Member Months Gender`=='F'),
+         firstname = `Analytics Member Months First Name`,
+         lastname = `Analytics Member Months Last Name`,
+         membermo = interval(start,end)/months(1)) %>%
+  # filter(start=="2016-01-01",
+  #        end=="2019-12-31") %>%
+  select(age, female, personid, firstname, lastname,membermo) %>%
+  distinct()
+```
+
+
+##Add in pharmacy claims  
 
 ```{r elig rx}
 rx_dol = rx
 rx_dol$`Analytics Claims Pharmacy Paid Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Paid Amount`))
-rx_dol$`Analytics Claims Pharmacy Copay Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Copay Amount`))
-rx_dol$`Analytics Claims Pharmacy Coinsurance Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Coinsurance Amount`))
-rx_dol$`Analytics Claims Pharmacy Deductible Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Deductible Amount`))
 rx_sub = rx_dol %>%
   mutate(personid = `Analytics Claims Pharmacy Person ID`) %>%
   group_by(personid) %>%
-  mutate(cost_rx = sum(`Analytics Claims Pharmacy Paid Amount`),
-         copay_rx = sum(`Analytics Claims Pharmacy Copay Amount`),
-         coins_rx = sum(`Analytics Claims Pharmacy Coinsurance Amount`),
-         deduct_rx = sum(`Analytics Claims Pharmacy Deductible Amount`)) %>%
-  select(personid,cost_rx,copay_rx,coins_rx,deduct_rx) %>%
+  mutate(age = interval(mdy(`Metaclaims Analytics Pharmacy Service Date Start Ch Date`), mdy(`Metaclaims Analytics Pharmacy Date of Birth Date`))/years(1),
+         female = (`Metaclaims Analytics Medical Gender`=="F"),
+         firstname = `Metaclaims Analytics Medical First Name`,
+         lastname = `Metaclaims Analytics Medical Last Name`,
+         cost_rx = sum(`Analytics Claims Pharmacy Paid Amount`)) %>%
+  select(age, female, firstname,lastname,cost_rx) %>%
   distinct()
+
+spacex_dat = clm_tot %>%
+  full_join(rx_sub, by = c("firstname","lastname","age","female")) %>% 
+  full_join(mbr_sub, by =c("firstname","lastname","age","female"))
 ```
 
-##Merge data
 
-by person id, left joining to isolate to eligible mbrs only
 
-```{r merge}
-spacex_dat = mbr_sub %>%
-  left_join(clm_sub, by="personid") %>%
-  left_join(rx_sub, by = "personid")
-
-CreateTableOne(vars = c("age", "female",  "cost_md", "copay_md", "coins_md", "deduct_md","count_er","cost_er","count_hosp","cost_hosp","count_pcp","cost_pcp","count_spec","cost_spec", "cost_rx", "copay_rx", "coins_rx", "deduct_rx"), strata = "om_flag" , data = spacex_dat, factorVars = c("female", "om_flag", "diag1"))
-```
-
-## Base key outcome variables vs. control
+## Pre-match outcome metrics
+Key outcome variables vs. control
 PEPM by service type 
 Utilization rates by service type
 Episode-based cost analyses for MH and PT
 
+
 ```{r outcome prematch}
 spacex_dat = spacex_dat %>%
-  mutate(pepm_medprx = sum(cost_md+cost_rx)/length(mbr_sub)/42, #42 months in current claims set
-         pepm_er = sum(cost_er)/length(mbr_sub)/42,
-         pepm_hosp = sum(cost_hosp)/length(mbr_sub)/42,
-         pepm_pcp = sum(cost_pcp)/length(mbr_sub)/42,
-         pepm_spec = sum(cost_spec)/length(mbr_sub)/42,
-         util_er = sum(count_er)/length(mbr_sub)/42*1000,
-         util_hosp = sum(count_hosp)/length(mbr_sub)/42*1000,
-         util_pcp = sum(count_pcp)/length(mbr_sub)/42*1000,
-         util_spec = sum(count_spec)/length(mbr_sub)/42*1000,
+  mutate(pepm_medprx = sum(cost_md+cost_rx)/length(mbr_sub)/membermo, 
+         pepm_er = sum(cost_er)/length(mbr_sub)/membermo,
+         pepm_hosp = sum(cost_hosp)/length(mbr_sub)/membermo,
+         pepm_pcp = sum(cost_pcp)/length(mbr_sub)/membermo,
+         pepm_spec = sum(cost_spec)/length(mbr_sub)/membermo,
+         util_er = sum(count_er)/length(mbr_sub)/membermo*1000,
+         util_hosp = sum(count_hosp)/length(mbr_sub)/membermo*1000,
+         util_pcp = sum(count_pcp)/length(mbr_sub)/membermo*1000,
+         util_spec = sum(count_spec)/length(mbr_sub)/membermo*1000,
          cost_per_er = sum(cost_er)/sum(count_er),
          cost_per_hosp = sum(cost_hosp)/sum(count_hosp),
          cost_per_pcp = sum(cost_pcp)/sum(count_pcp),
          cost_per_spec = sum(cost_spec)/sum(count_spec))
 
-CreateTableOne(vars = c("age", "female",  "cost_md", "copay_md", "coins_md", "deduct_md","count_er","cost_er","cost_hosp","count_pcp","count_spec","cost_spec", "cost_rx", "copay_rx", "coins_rx", "deduct_rx", "pepm_medprx", "pepm_er", "pepm_hosp", "pepm_pcp", "pepm_spec", "util_er", "util_hosp", "util_pcp", "util_spec", "cost_per_er", "cost_per_hosp", "cost_per_pcp", "cost_per_spec"), strata = "om_flag" , data = spacex_dat, factorVars = c("female", "om_flag", "diag1"))
+CreateTableOne(vars = c("age", "female",  "cost_md", "count_er","cost_er","count_hosp","cost_hosp","count_pcp","cost_pcp","count_spec","cost_spec", "cost_rx", "pepm_medprx", "pepm_er", "pepm_hosp", "pepm_pcp", "pepm_spec", "util_er", "util_hosp", "util_pcp", "util_spec", "cost_per_er", "cost_per_hosp", "cost_per_pcp", "cost_per_spec"), strata = "om_flag" , data = spacex_dat, factorVars = c("female", "om_flag", "diag1"))
 
 ```
 
 
 ##Matching
 
-coarsened exact match on all features
+match on all features
 
 ```{r matching}
 
