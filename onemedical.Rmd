@@ -10,10 +10,10 @@ output: pdf_document
 ```{r setup, include=FALSE}
 rm(list=ls())
 knitr::opts_chunk$set(echo = TRUE)
-install.packages('tidyverse')
-install.packages('lubridate')
-install.packages('readr')
-install.packages('tableone')
+install.packages('tidyverse', repos = "http://cran.us.r-project.org")
+install.packages('lubridate', repos = "http://cran.us.r-project.org")
+install.packages('readr', repos = "http://cran.us.r-project.org")
+install.packages('tableone', repos = "http://cran.us.r-project.org")
 library(tidyverse)
 library(lubridate)
 library(readr)
@@ -92,8 +92,8 @@ ctr2_sub = ctr2_sub %>%
   separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
   mutate(dos = mdy(`Ledger Date`)) %>%
   group_by(firstname,lastname,dos)%>%
-  mutate(age = "NA",
-         female= "NA",
+  mutate(age = as.numeric("NA"),
+         female= as.numeric("NA"),
          om_flag = 1,
          em_flag = ((`Procedure Code`=='99201')|
                     (`Procedure Code`=='99202')|
@@ -116,7 +116,7 @@ clm_dol$`Metaclaims Analytics Medical Paid Amount Ch` = as.numeric(gsub("[\\$,]"
 
 clm_sub = clm_dol %>%
   mutate(personid = (`Metaclaims Analytics Medical Person ID`),
-         age = interval(mdy(`Metaclaims Analytics Medical Service Date Start Ch Date`), mdy(`Metaclaims Analytics Medical Date of Birth Date`))/years(1),
+         age = round(interval(ymd(`Metaclaims Analytics Medical Date of Birth Date`), ymd(`Metaclaims Analytics Medical Service Date Start Ch Date`))/years(1),0),
          female = (`Metaclaims Analytics Medical Gender`=="F"),
          firstname = `Metaclaims Analytics Medical First Name`,
          lastname = `Metaclaims Analytics Medical Last Name`,
@@ -152,10 +152,12 @@ clm_sub = clm_dol %>%
   group_by(firstname,lastname,age,female,pos,dos) %>%
   summarise(om_flag = max(om_flag),
             em_flag = max(em_flag),
+            em_flag = as.logical(em_flag),
             diag1 = getmode(`Metaclaims Analytics Medical Principal Diag`),
             cost_md = sum(`Metaclaims Analytics Medical Paid Amount Ch`)) %>%
-  select(firstname,lastname,dos,em_flag,om_flag,diag1,pos,cost_md) %>%
+  select(firstname,lastname,age,female,dos,em_flag,om_flag,diag1,pos,cost_md) %>%
   ungroup() 
+clm_sub$age[clm_sub$age<0] = 0
 
 ```
 
@@ -169,12 +171,11 @@ Util counts with replacement of NAs with 0 by service category
     
 ```{r elig clm}
 
-clm_tot = clm_sub %>%
-  full_join(ctr_sub, by=c("firstname","lastname","age","female")) %>%
-  full_join(ctr2_sub, by =c("firstname", "lastname")) # when OM data updated, also join by age, female
+clm_tot = bind_rows(clm_sub,ctr_sub) %>%
+  bind_rows(ctr2_sub)
   
 clm_tot = clm_tot %>%
-  group_by(firstname, lastname) %>%
+  group_by(firstname, lastname,age, female) %>%
   filter(any(em_flag==1)) %>%
   summarise(om_flag = getmode(om_flag[em_flag==1]),
             diag1 = getmode(diag1),
@@ -225,12 +226,12 @@ rx_dol$`Analytics Claims Pharmacy Paid Amount` = as.numeric(gsub("[\\$,]", "", r
 rx_sub = rx_dol %>%
   mutate(personid = `Analytics Claims Pharmacy Person ID`) %>%
   group_by(personid) %>%
-  mutate(age = interval(mdy(`Metaclaims Analytics Pharmacy Service Date Start Ch Date`), mdy(`Metaclaims Analytics Pharmacy Date of Birth Date`))/years(1),
-         female = (`Metaclaims Analytics Medical Gender`=="F"),
-         firstname = `Metaclaims Analytics Medical First Name`,
-         lastname = `Metaclaims Analytics Medical Last Name`,
+  mutate(age = round(interval(ymd(`Analytics Claims Pharmacy Date of Birth Date`), ymd(`Analytics Claims Pharmacy Service Date Start Date`))/years(1),0),
+         female = (`Analytics Claims Pharmacy Gender`=="F"),
+         firstname = `Analytics Claims Pharmacy First Name`,
+         lastname = `Analytics Claims Pharmacy Last Name`,
          cost_rx = sum(`Analytics Claims Pharmacy Paid Amount`)) %>%
-  select(age, female, firstname,lastname,cost_rx) %>%
+  select(age, female, personid, firstname,lastname,cost_rx) %>%
   distinct()
 
 spacex_dat = clm_tot %>%
