@@ -149,12 +149,12 @@ clm_sub = clm_dol %>%
                     (`Metaclaims Analytics Medical Procedure Code`=='99213')|
                     (`Metaclaims Analytics Medical Procedure Code`=='99214')|
                     (`Metaclaims Analytics Medical Procedure Code`=='99215'))) %>%
-  group_by(personid,pos,dos) %>%
+  group_by(firstname,lastname,age,female,pos,dos) %>%
   summarise(om_flag = max(om_flag),
             em_flag = max(em_flag),
             diag1 = getmode(`Metaclaims Analytics Medical Principal Diag`),
             cost_md = sum(`Metaclaims Analytics Medical Paid Amount Ch`)) %>%
-  select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,cost_md) %>%
+  select(firstname,lastname,dos,em_flag,om_flag,diag1,pos,cost_md) %>%
   ungroup() 
 
 ```
