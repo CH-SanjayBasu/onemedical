@@ -1,0 +1,197 @@
+---
+title: "onemedical - sensitivity analyses"
+author: "Sanjay Basu"
+date: "7/26/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+load("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
+```
+
+## sensitivity analyses:
+- exclude NICU and newborns, dialysis, pregnancy, hospice, rehab, and transplants
+- cap claimants to $35k/12mo
+- exclude those without a min # of member-months: 11
+- compare MH claim $/freq pre vs post Lyra
+
+
+```{r sens}
+
+sens_m = dta_m %>%
+  filter(age != 0,
+         diag1 != "Z992",
+         diag1 != "Z340",
+         diag1 != "Z515",
+         diag1 != "F0",
+         diag1 != "T86",
+         (cost_md/membermo) < (35000/12),
+         membermo>11) 
+
+
+```
+
+# The estimated treatment effect 
+
+
+```{r sens ate}
+glmMatched1_s <- glm(formula = cost_md ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched1_s)
+
+glmMatched2_s <- glm(formula = cost_er ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched2_s)
+
+glmMatched3_s <- glm(formula = cost_hosp ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched3_s)
+
+glmMatched4_s <- glm(formula = cost_pcp ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched4_s)
+
+glmMatched5_s <- glm(formula = cost_spec ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched5_s)
+
+
+glmMatched5a_s <- glm(formula = cost_mh ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched5a_s)
+
+
+glmMatched5b_s <- glm(formula = cost_pt ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched5b_s)
+
+
+glmMatched6_s <- glm(formula = cost_rx ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched6_s)
+
+
+glmMatched7_s <- glm(formula = count_er ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
+
+summary(glmMatched7_s)
+
+glmMatched8_s <- glm(formula = count_hosp ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
+
+summary(glmMatched8_s)
+
+glmMatched9_s <- glm(formula = count_pcp ~ om_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
+summary(glmMatched9_s)
+
+glmMatched10_s <- glm(formula = count_spec ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m,
+                    family = poisson())
+
+summary(glmMatched10_s)
+
+
+glmMatched10a_s <- glm(formula = count_mh ~ om_flag + age + female + diag1 + membermo + hcc,
+                     data    = dta_m,
+                     family = poisson())
+
+summary(glmMatched10a_s)
+
+
+glmMatched10b_s <- glm(formula = count_pt ~ om_flag + age + female + diag1 + membermo + hcc,
+                     data    = dta_m,
+                     family = poisson())
+
+summary(glmMatched10b_s)
+```
+
+
+## subgroup analyses:
+- onsite participant vs not
+- virtual participant vs. not
+
+cnt_flag
+
+vrt_flag
+
+
+```{r hte}
+glmMatched1_g <- glm(formula = cost_md ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched1_g)
+
+glmMatched2_g <- glm(formula = cost_er ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched2_g)
+
+glmMatched3_g <- glm(formula = cost_hosp ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched3_g)
+
+glmMatched4_g <- glm(formula = cost_pcp ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched4_g)
+
+glmMatched5_g <- glm(formula = cost_gpec ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched5_g)
+
+
+glmMatched5a_g <- glm(formula = cost_mh ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched5a_g)
+
+
+glmMatched5b_g <- glm(formula = cost_pt ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched5b_g)
+
+
+glmMatched6_g <- glm(formula = cost_rx ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m)
+summary(glmMatched6_g)
+
+
+glmMatched7_g <- glm(formula = count_er ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
+
+summary(glmMatched7_g)
+
+glmMatched8_g <- glm(formula = count_hosp ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
+
+summary(glmMatched8_g)
+
+glmMatched9_g <- glm(formula = count_pcp ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
+summary(glmMatched9_g)
+
+glmMatched10_g <- glm(formula = count_gpec ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m,
+                    family = poisson())
+
+summary(glmMatched10_g)
+
+
+glmMatched10a_g <- glm(formula = count_mh ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                     data    = dta_m,
+                     family = poisson())
+
+summary(glmMatched10a_g)
+
+
+glmMatched10b_g <- glm(formula = count_pt ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + diag1 + membermo + hcc,
+                     data    = dta_m,
+                     family = poisson())
+
+summary(glmMatched10b_g)
+```
