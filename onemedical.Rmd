@@ -1,8 +1,8 @@
 ---
 title: "One Medical"
 author: "Sanjay Basu"
-date: "7/2/2019"
-output: pdf_document
+date: "7/26/2019"
+output: html_document
 ---
 
 ##Import dependencies/packages
@@ -14,16 +14,22 @@ install.packages('tidyverse', repos = "http://cran.us.r-project.org")
 install.packages('lubridate', repos = "http://cran.us.r-project.org")
 install.packages('readr', repos = "http://cran.us.r-project.org")
 install.packages('tableone', repos = "http://cran.us.r-project.org")
+install.packages('MatchIt', repos = "http://cran.us.r-project.org")
+install.packages('devtools', repos = "http://cran.us.r-project.org")
+devtools::install_github("healthactuary/cmshcc")
 library(tidyverse)
 library(lubridate)
 library(readr)
 library(tableone)
 library(tools)
+library(MatchIt)
+library(cmshcc)
 ```
 
 ##Import datasets
 
 SpaceX members, medical claims, and pharmacy claims
+- unfortunately don't have the demographics data for the 1/16-9/16 claims, commenting that out for now
 
 ```{r warning = FALSE, message = FALSE}
 setwd("~/Box/Analytics Team/Research/Research projects/One medical")
@@ -31,7 +37,9 @@ mbr <- read_csv("spacex_members.csv")
 clm <- read_csv("spacex_claims.csv")
 rx <- read_csv("spacex_pharmacy.csv")
 ctr <- read_csv("SpaceX Health Center Claims 1016 to 1217.csv")
-ctr2 <- read_csv("SpaceX Health Center Claims 0116 to 0916.csv")
+#ctr2 <- read_csv("SpaceX Health Center Claims 0116 to 0916.csv")
+vrt <- read_csv("SpaceX Member Virtual Services 0721919.csv")
+feesch <- read_csv("feesch.csv")
 ```
 
 ## custom functions
@@ -47,72 +55,17 @@ getmode <- function(v) {
 ```
 
 
-##Add in OM Center claims to CH claims
+##Format claims to combine CH claims to OM Center claims  
 
-add in only those not already in CH dataset [overlap in ctr2 file]
-need to update ctr2 file to include age, gender, principal diag [currently missing]
+add in only those Center claims not already in CH dataset [overlap in ctr2 file]
 
-```{r center}
-ctr_sub = ctr
-ctr_sub$Name = tolower(ctr$Name)
-ctr_sub$Name = toTitleCase(ctr$Name)
-ctr_sub$`Primary Diagnosis` = as.character(gsub("[\\.]", "", ctr_sub$`Primary Diagnosis`))
-
-ctr_sub = ctr_sub %>%
-  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
-  mutate(dos = mdy(DOS)) %>%
-  group_by(firstname,lastname,dos)%>%
-  mutate(age = mean(Age),
-         female= getmode((Gender=='F')),
-         om_flag = 1,
-         em_flag = ((CPT=='99201')|
-                    (CPT=='99202')|
-                    (CPT=='99203')|
-                    (CPT=='99204')|
-                    (CPT=='99205')|
-                    (CPT=='99211')|
-                    (CPT=='99212')|
-                    (CPT=='99213')|
-                    (CPT=='99214')|
-                    (CPT=='99215')),
-         diag1 = getmode(`Primary Diagnosis`),
-         pos = "Office Visits - PCP",
-         cost_md = sum(Payments)) %>%
-  select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,cost_md) %>%
-  distinct()
-
-ctr2_sub = ctr2
-ctr2_sub$Name = tolower(ctr2_sub$`Patient Name`)
-ctr2_sub$Name = toTitleCase(ctr2_sub$Name)
-ctr2_sub$`Primary Diagnosis` = "NA"
-ctr2_sub = ctr2_sub[ctr2_sub$`Payer Name`!="Collective Health",]
-ctr2_sub$cost_md = as.numeric(gsub("[\\$,]", "", ctr2_sub$Charge))
-
-ctr2_sub = ctr2_sub %>%
-  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
-  mutate(dos = mdy(`Ledger Date`)) %>%
-  group_by(firstname,lastname,dos)%>%
-  mutate(age = as.numeric("NA"),
-         female= as.numeric("NA"),
-         om_flag = 1,
-         em_flag = ((`Procedure Code`=='99201')|
-                    (`Procedure Code`=='99202')|
-                    (`Procedure Code`=='99203')|
-                    (`Procedure Code`=='99204')|
-                    (`Procedure Code`=='99205')|
-                    (`Procedure Code`=='99211')|
-                    (`Procedure Code`=='99212')|
-                    (`Procedure Code`=='99213')|
-                    (`Procedure Code`=='99214')|
-                    (`Procedure Code`=='99215')),
-         diag1 = "NA",
-         pos = "Office Visits - PCP",
-         cost_md = sum(cost_md)) %>%
-  select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,cost_md) %>%
-  distinct()
-
+```{r ch plus center}
 clm_dol = clm
 clm_dol$`Metaclaims Analytics Medical Paid Amount Ch` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Paid Amount Ch`))
+clm_dol$`Metaclaims Analytics Medical First Name` = tolower(clm_dol$`Metaclaims Analytics Medical First Name`)
+clm_dol$`Metaclaims Analytics Medical First Name` = toTitleCase(clm_dol$`Metaclaims Analytics Medical First Name`)
+clm_dol$`Metaclaims Analytics Medical Last Name` = tolower(clm_dol$`Metaclaims Analytics Medical Last Name`)
+clm_dol$`Metaclaims Analytics Medical Last Name` = toTitleCase(clm_dol$`Metaclaims Analytics Medical Last Name`)
 
 clm_sub = clm_dol %>%
   mutate(personid = (`Metaclaims Analytics Medical Person ID`),
@@ -154,10 +107,107 @@ clm_sub = clm_dol %>%
             em_flag = max(em_flag),
             em_flag = as.logical(em_flag),
             diag1 = getmode(`Metaclaims Analytics Medical Principal Diag`),
-            cost_md = sum(`Metaclaims Analytics Medical Paid Amount Ch`)) %>%
+            cost_md = sum(`Metaclaims Analytics Medical Paid Amount Ch`),
+         cnt_flag = 0) %>%
   select(firstname,lastname,age,female,dos,em_flag,om_flag,diag1,pos,cost_md) %>%
   ungroup() 
 clm_sub$age[clm_sub$age<0] = 0
+
+ctr_sub = ctr
+ctr_sub$Name = tolower(ctr$Name)
+ctr_sub$Name = toTitleCase(ctr$Name)
+ctr_sub$`Primary Diagnosis` = as.character(gsub("[\\.]", "", ctr_sub$`Primary Diagnosis`))
+
+ctr_sub = ctr_sub %>%
+  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
+  mutate(dos = mdy(DOS)) %>%
+  group_by(firstname,lastname,dos)%>%
+  mutate(age = mean(Age),
+         female= getmode((Gender=='F')),
+         om_flag = 1,
+         em_flag = ((CPT=='99201')|
+                    (CPT=='99202')|
+                    (CPT=='99203')|
+                    (CPT=='99204')|
+                    (CPT=='99205')|
+                    (CPT=='99211')|
+                    (CPT=='99212')|
+                    (CPT=='99213')|
+                    (CPT=='99214')|
+                    (CPT=='99215')),
+         pt_flag = ((Billing=='KSPANGENBE[109557787]')|
+                    (Billing=='MMARCUCCIL[109565213]')),
+         mh_flag = ((Billing=='Darling[109701110]')|
+                      (Billing=='GFRANK[109571370]')),
+         diag1 = getmode(`Primary Diagnosis`),
+         pos = ("Office Visits - PCP"))  %>%  
+  select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,CPT,pt_flag,mh_flag) %>%
+  distinct()
+  
+ctr_sub$pos[ctr_sub$mh_flag==1] =  "Mental Health and Substance Use" 
+ctr_sub$pos[ctr_sub$pt_flag==1] = "Physical Medicine" 
+
+
+# fill in zero costs with pay schedule for OM center
+# om_pay_sch = clm_dol %>%
+#   mutate( om_flag = ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460695495")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467701821))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460741732")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073862256))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="362169147")&(`Metaclaims Analytics Medical Billing Prov Npi`==1336709112))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="814542216")&(`Metaclaims Analytics Medical Billing Prov Npi`==1518438712))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="383906267")&(`Metaclaims Analytics Medical Billing Prov Npi`==1528538774))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="471708588")&(`Metaclaims Analytics Medical Billing Prov Npi`==1184014854))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="271346767")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467781641))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="911942315")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073553947))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812141065")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467800383))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="452282261")&(`Metaclaims Analytics Medical Billing Prov Npi`==1962798645))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="273009385")&(`Metaclaims Analytics Medical Billing Prov Npi`==1861709487))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812980907")&(`Metaclaims Analytics Medical Billing Prov Npi`==1598214397))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="270243800")&(`Metaclaims Analytics Medical Billing Prov Npi`==1144457151))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="020619758")&(`Metaclaims Analytics Medical Billing Prov Npi`==1497786883))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="461773122")&(`Metaclaims Analytics Medical Billing Prov Npi`==1508103169))|
+#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1417382102)),
+#           CPT = `Metaclaims Analytics Medical Procedure Code`) %>%
+#   filter(om_flag==1) %>%
+#   group_by(CPT) %>%
+#   summarise(cost_md = mean(`Metaclaims Analytics Medical Paid Amount Ch`, na.rm=T))
+
+
+ctr_sub = full_join(ctr_sub,feesch,by="CPT") %>%  # REPLACE BY OFFICIAL FEE SCHEDULE
+  select(-CPT) %>%
+  mutate(cnt_flag = 1)
+
+
+# ctr2_sub = ctr2
+# ctr2_sub$Name = tolower(ctr2_sub$`Patient Name`)
+# ctr2_sub$Name = toTitleCase(ctr2_sub$Name)
+# ctr2_sub$`Primary Diagnosis` = "NA"
+# ctr2_sub = ctr2_sub[ctr2_sub$`Payer Name`!="Collective Health",]
+# ctr2_sub$cost_md = as.numeric(gsub("[\\$,]", "", ctr2_sub$Charge))
+# 
+# ctr2_sub = ctr2_sub %>%
+#   separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
+#   mutate(dos = mdy(`Ledger Date`)) %>%
+#   group_by(firstname,lastname,dos)%>%
+#   mutate(age = as.numeric("NA"),
+#          female= as.numeric("NA"),
+#          om_flag = 1,
+#          em_flag = ((`Procedure Code`=='99201')|
+#                     (`Procedure Code`=='99202')|
+#                     (`Procedure Code`=='99203')|
+#                     (`Procedure Code`=='99204')|
+#                     (`Procedure Code`=='99205')|
+#                     (`Procedure Code`=='99211')|
+#                     (`Procedure Code`=='99212')|
+#                     (`Procedure Code`=='99213')|
+#                     (`Procedure Code`=='99214')|
+#                     (`Procedure Code`=='99215')),
+#          diag1 = "NA",
+#          pos = "Office Visits - PCP",
+#          cost_md = sum(cost_md)) %>%
+#   select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,cost_md) %>%
+#   distinct()
+
+
 
 ```
 
@@ -171,8 +221,8 @@ Util counts with replacement of NAs with 0 by service category
     
 ```{r elig clm}
 
-clm_tot = bind_rows(clm_sub,ctr_sub) %>%
-  bind_rows(ctr2_sub)
+clm_tot = bind_rows(clm_sub,ctr_sub) #%>%
+#  bind_rows(ctr2_sub)
   
 clm_tot = clm_tot %>%
   group_by(firstname, lastname,age, female) %>%
@@ -188,20 +238,30 @@ clm_tot = clm_tot %>%
             cost_pcp = sum((cost_md[pos=="Office Visits - PCP"|pos=="Preventive Visits - PCP"])),
             count_spec = sum((pos=="Office Visits - Specialist")|(pos=="Preventive Visits - Specialist")),
             cost_spec = sum((cost_md[pos=="Office Visits - Specialist"|pos=="Preventive Visits - Specialist"])),
-            cost_pcp = replace_na(cost_pcp,0),
-            cost_spec = replace_na(cost_spec,0)) %>%
-  select(firstname,lastname,age, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec) %>%
+            count_mh = sum(pos=="Mental Health and Substance Use"),
+            cost_mh = sum(cost_md[pos=="Mental Health and Substance Use"]),
+            count_pt = sum(pos=="Physical Medicine"),
+            cost_pt = sum(cost_md[pos=="Physical Medicine"]),
+            cnt_flag = max(cnt_flag)) %>%   
+  select(firstname,lastname,age, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,count_mh,cost_mh,count_pt,cost_pt,cnt_flag) %>%
   distinct()
+clm_tot$female[is.na(clm_tot$female)==1]=0
+
 ```
 
 
 ##Member org
 
-Reorganize member data to enable eligibility criteria application
-requirement of continuous enrollment 
+organize member data 
 
 ```{r elig mbr}
-mbr_sub = mbr %>%
+mbr_sub = mbr
+mbr_sub$`Analytics Member Months First Name` = tolower(mbr_sub$`Analytics Member Months First Name`)
+mbr_sub$`Analytics Member Months First Name` = toTitleCase(mbr_sub$`Analytics Member Months First Name`)
+mbr_sub$`Analytics Member Months Last Name` = tolower(mbr_sub$`Analytics Member Months Last Name`)
+mbr_sub$`Analytics Member Months Last Name` = toTitleCase(mbr_sub$`Analytics Member Months Last Name`)
+
+mbr_sub = mbr_sub %>%
   mutate(personid = `Analytics Member Months Person ID`) %>%
   group_by(personid) %>%
   mutate(start = min(`Analytics Member Months Start Date`),
@@ -210,10 +270,11 @@ mbr_sub = mbr %>%
          female = (`Analytics Member Months Gender`=='F'),
          firstname = `Analytics Member Months First Name`,
          lastname = `Analytics Member Months Last Name`,
-         membermo = interval(start,end)/months(1)) %>%
+         membermo = interval(start,end)/months(1),
+         DOB = `Analytics Member Months Date of Birth Date`) %>%
   # filter(start=="2016-01-01",
   #        end=="2019-12-31") %>%
-  select(age, female, personid, firstname, lastname,membermo) %>%
+  select(age, female, personid, firstname, lastname, membermo, DOB) %>%
   distinct()
 ```
 
@@ -223,6 +284,11 @@ mbr_sub = mbr %>%
 ```{r elig rx}
 rx_dol = rx
 rx_dol$`Analytics Claims Pharmacy Paid Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Paid Amount`))
+rx_dol$`Analytics Claims Pharmacy First Name` = tolower(rx_dol$`Analytics Claims Pharmacy First Name`)
+rx_dol$`Analytics Claims Pharmacy First Name` = toTitleCase(rx_dol$`Analytics Claims Pharmacy First Name`)
+rx_dol$`Analytics Claims Pharmacy Last Name` = tolower(rx_dol$`Analytics Claims Pharmacy Last Name`)
+rx_dol$`Analytics Claims Pharmacy Last Name` = toTitleCase(rx_dol$`Analytics Claims Pharmacy Last Name`)
+
 rx_sub = rx_dol %>%
   mutate(personid = `Analytics Claims Pharmacy Person ID`) %>%
   group_by(personid) %>%
@@ -233,46 +299,433 @@ rx_sub = rx_dol %>%
          cost_rx = sum(`Analytics Claims Pharmacy Paid Amount`)) %>%
   select(age, female, personid, firstname,lastname,cost_rx) %>%
   distinct()
-
-spacex_dat = clm_tot %>%
-  full_join(rx_sub, by = c("firstname","lastname","age","female")) %>% 
-  full_join(mbr_sub, by =c("firstname","lastname","age","female"))
+rx_sub$age[rx_sub$age<0] = 0
 ```
 
+## virtual visits
+```{r vrt}
+vrt_sub = vrt
+vrt_sub$`dphi.patient_first_name` = tolower(vrt_sub$`dphi.patient_first_name`)
+vrt_sub$`dphi.patient_first_name` = toTitleCase(vrt_sub$`dphi.patient_first_name`)
+vrt_sub$`dphi.patient_last_name` = tolower(vrt_sub$`dphi.patient_last_name`)
+vrt_sub$`dphi.patient_last_name` = toTitleCase(vrt_sub$`dphi.patient_last_name`)
 
+vrt_sub = vrt_sub %>%
+  mutate(vrt_flag = 1,
+         firstname = dphi.patient_first_name,
+         lastname = dphi.patient_last_name) %>%
+  select(firstname, lastname, vrt_flag) %>%
+  distinct()
+
+
+```
+
+## HCC risk score
+```{r hcc}
+
+spacex_dat = mbr_sub %>% 
+  full_join(clm_tot, by = c("firstname","lastname","female")) %>%
+  full_join(rx_sub, by = c("firstname","lastname","female")) %>%
+  full_join(vrt_sub, by = c("firstname","lastname")) %>%
+  mutate(om_flag = replace_na(om_flag,0),
+         vrt_flag = replace_na(vrt_flag,0),
+         cnt_flag = replace_na(cnt_flag,0))
+
+PERSON = spacex_dat %>%
+  ungroup() %>%
+  mutate(HICNO = personid.x,
+         SEX = if_else(female==1,"F","M"),
+         DOB = DOB,
+         MCAID = 0,
+         NMCAID = 0,
+         OREC = 0) %>%
+  select(HICNO, SEX, MCAID, NMCAID, OREC, DOB) %>% 
+  filter(!is.na(HICNO))
+
+cmshcc_map <- load_cmshcc_map()
+
+DIAG = spacex_dat %>%
+  ungroup() %>%
+  mutate(HICNO = personid.x,
+         DX = diag1) %>%
+  select(HICNO, DX) %>% 
+  filter(!is.na(HICNO))
+
+hcc = evaluate_v22_2017(PERSON, DIAG, "Community_NonDual_Aged")
+
+
+spacex_dat = mbr_sub %>% 
+  full_join(clm_tot, by = c("firstname","lastname","female")) %>%
+  full_join(rx_sub, by = c("firstname","lastname","female")) %>%
+  full_join(vrt_sub, by = c("firstname","lastname")) %>%
+  full_join(hcc, by = c("personid.x" = "HICNO")) %>%
+  mutate(om_flag = replace_na(om_flag,0),
+         vrt_flag = replace_na(vrt_flag,0),
+         cnt_flag = replace_na(cnt_flag,0),
+         hcc = Community_NonDual_Aged)
+
+```
 
 ## Pre-match outcome metrics
 Key outcome variables vs. control
-PEPM by service type 
+pmpm by service type 
 Utilization rates by service type
 Episode-based cost analyses for MH and PT
 
+```{r outcomes}
 
-```{r outcome prematch}
-spacex_dat = spacex_dat %>%
-  mutate(pepm_medprx = sum(cost_md+cost_rx)/length(mbr_sub)/membermo, 
-         pepm_er = sum(cost_er)/length(mbr_sub)/membermo,
-         pepm_hosp = sum(cost_hosp)/length(mbr_sub)/membermo,
-         pepm_pcp = sum(cost_pcp)/length(mbr_sub)/membermo,
-         pepm_spec = sum(cost_spec)/length(mbr_sub)/membermo,
-         util_er = sum(count_er)/length(mbr_sub)/membermo*1000,
-         util_hosp = sum(count_hosp)/length(mbr_sub)/membermo*1000,
-         util_pcp = sum(count_pcp)/length(mbr_sub)/membermo*1000,
-         util_spec = sum(count_spec)/length(mbr_sub)/membermo*1000,
-         cost_per_er = sum(cost_er)/sum(count_er),
-         cost_per_hosp = sum(cost_hosp)/sum(count_hosp),
-         cost_per_pcp = sum(cost_pcp)/sum(count_pcp),
-         cost_per_spec = sum(cost_spec)/sum(count_spec))
+spacex_dat %>%
+  ungroup() %>%
+  group_by(om_flag) %>%
+  summarise(age = mean(age.x, na.rm=TRUE),
+            female = mean(female, na.rm=TRUE),
+            pmpm_medprx = (sum(cost_md, na.rm=TRUE)+sum(cost_rx, na.rm=TRUE))/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000, 
+        pmpm_er = sum(cost_er, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        pmpm_hosp = sum(cost_hosp, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        pmpm_pcp = sum(cost_pcp, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        pmpm_spec = sum(cost_spec, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        pmpm_mh = sum(cost_mh, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        pmpm_pt = sum(cost_pt, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        util_er = sum(count_er, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        util_hosp = sum(count_hosp, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        util_pcp = sum(count_pcp, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        util_spec = sum(count_spec, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        util_mh = sum(count_mh, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+        util_pt = sum(count_pt, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
+         cost_per_er = sum(cost_er[cost_er>0], na.rm=TRUE)/sum(count_er[cost_er>0], na.rm=TRUE),
+         cost_per_hosp = sum(cost_hosp[cost_hosp>0], na.rm=TRUE)/sum(count_hosp[cost_hosp>0], na.rm=TRUE),
+         cost_per_pcp = sum(cost_pcp[cost_pcp>0], na.rm=TRUE)/sum(count_pcp[cost_pcp>0], na.rm=TRUE),
+         cost_per_spec = sum(cost_spec[cost_spec>0], na.rm=TRUE)/sum(count_spec[cost_spec>0], na.rm=TRUE),
+         cost_per_pt = sum(cost_pt[cost_pt>0], na.rm=TRUE)/sum(count_pt[cost_pt>0], na.rm=TRUE),
+         cost_per_mh = sum(cost_mh[cost_mh>0], na.rm=TRUE)/sum(count_mh[cost_mh>0], na.rm=TRUE),
+        vrt_flag = mean(vrt_flag,na.rm=T),
+        cnt_flag = mean(cnt_flag,na.rm=T),
+        hcc = mean(hcc,na.rm=T))
 
-CreateTableOne(vars = c("age", "female",  "cost_md", "count_er","cost_er","count_hosp","cost_hosp","count_pcp","cost_pcp","count_spec","cost_spec", "cost_rx", "pepm_medprx", "pepm_er", "pepm_hosp", "pepm_pcp", "pepm_spec", "util_er", "util_hosp", "util_pcp", "util_spec", "cost_per_er", "cost_per_hosp", "cost_per_pcp", "cost_per_spec"), strata = "om_flag" , data = spacex_dat, factorVars = c("female", "om_flag", "diag1"))
+
+```
+
+## replace NAs
+
+```{r na}
+
+spacex_dat = mbr_sub %>%
+  full_join(clm_tot, by = c("firstname","lastname","female")) %>%
+  full_join(rx_sub, by = c("firstname","lastname","female")) %>%
+  full_join(vrt_sub, by = c("firstname","lastname")) %>%
+  full_join(hcc, by = c("personid.x" = "HICNO")) %>%
+  mutate(age = age.x,
+         om_flag = replace_na(om_flag,0),
+         vrt_flag = replace_na(vrt_flag,0),
+         cnt_flag = replace_na(cnt_flag,0),
+         cost_md = replace_na(cost_md,0),
+         count_er = replace_na(count_er,0),
+         cost_er = replace_na(cost_er,0),
+         count_hosp = replace_na(count_hosp,0),
+         cost_hosp = replace_na(cost_hosp,0),
+         count_pcp = replace_na(count_pcp,0),
+         cost_pcp = replace_na(cost_pcp,0),
+         count_spec = replace_na(count_spec,0),
+         cost_spec = replace_na(cost_spec,0),
+         cost_rx = replace_na(cost_rx,0),
+         hcc = Community_NonDual_Aged,
+         hcc = replace_na(hcc,0)) %>%
+  select(age, female, membermo, hcc, om_flag,diag1,cost_md,count_er,cost_er,count_hosp,count_mh,count_pt,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,cost_rx,cost_mh,cost_pt,cnt_flag,vrt_flag)
+
+summary(spacex_dat)
+
+save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
+
+```
+
+##Matching
+
+nearest neighbor match via propensity score: 
+https://gking.harvard.edu/ations/matchit-nonparametric-preprocessing-parametric-causal-inference
+page 7: "Nearest neighbor matching selects the r (default
+= 1) best control matches for each individual in the treatment group
+(excluding those discarded using the discard option). Matching is done
+using a distance measure specified by the distance option (default =
+logit, i.e., a logistic regression model is used to estimate the
+propensity score, defined as the probability of receiving treatment,
+conditional on the covariates). Matches are chosen for each treated
+unit one at a time, with the order specified by the m.order command
+(default = largest to smallest). At each matching step we choose the
+control unit that is not yet matched but is closest to the treated
+unit on the distance measure."
+
+
+NOTE:
+if you get this error:
+
+Error: vector memory exhausted (limit reached?)
+
+Try:
+
+Step 1: Open terminal,
+
+Step 2:
+cd ~
+touch .Renviron
+open .Renviron
+
+Step 3: Save the following as the first line of .Renviron:
+
+R_MAX_VSIZE=100Gb 
+
+Step 4: Restart R/RStudio and re-run the matching process
+
+
+```{r matching}
+spacex_dat_cov <- c('age', 'female', 'diag1', 'membermo', 'hcc')
+
+spacex_dat_nomiss <- spacex_dat %>%  # MatchIt does not allow missing values
+  select(cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,cost_rx,count_mh,cost_mh,count_pt,cost_pt,om_flag,cnt_flag,vrt_flag, one_of(spacex_dat_cov)) %>%
+  na.omit()
+
+spacex_dat_nomiss = as.data.frame(spacex_dat_nomiss)
+
+start_time <- Sys.time()
+
+mod_match <- matchit(om_flag ~ age + female + diag1 + membermo + hcc,
+                     method = "nearest", data = spacex_dat_nomiss)
+end_time <- Sys.time()
+
+end_time - start_time
+
+mod_match
+
+save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
 
 ```
 
 
-##Matching
+# Assessments of the covariance balance in the matched sample 
 
-match on all features
+```{r assess}
+dta_m <- match.data(mod_match)
+dim(dta_m)
 
-```{r matching}
+dta_m %>%
+  group_by(om_flag) %>%
+  select(one_of(spacex_dat_cov)) %>%
+  summarise_all(funs(mean))
+
+## Construct a table
+tabMatched <- CreateTableOne(vars = spacex_dat_cov, strata = "om_flag", data = dta_m, test = T)
+## Show table with SMD
+print(tabMatched, smd = TRUE)
+
+```
+
+# The estimated treatment effect 
+
+```{r ate}
+glmMatched1 <- glm(formula = cost_md ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched1)
+
+glmMatched2 <- glm(formula = cost_er ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched2)
+
+glmMatched3 <- glm(formula = cost_hosp ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched3)
+
+glmMatched4 <- glm(formula = cost_pcp ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched4)
+
+glmMatched5 <- glm(formula = cost_spec ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched5)
+
+
+glmMatched5a <- glm(formula = cost_mh ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched5a)
+
+
+glmMatched5b <- glm(formula = cost_pt ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched5b)
+
+
+glmMatched6 <- glm(formula = cost_rx ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m)
+summary(glmMatched6)
+
+
+glmMatched7 <- glm(formula = count_er ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m,
+                    family = poisson())
+
+summary(glmMatched7)
+
+glmMatched8 <- glm(formula = count_hosp ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m,
+                    family = poisson())
+
+summary(glmMatched8)
+
+glmMatched9 <- glm(formula = count_pcp ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m,
+                    family = poisson())
+summary(glmMatched9)
+
+glmMatched10 <- glm(formula = count_spec ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m,
+                    family = poisson())
+
+summary(glmMatched10)
+
+
+glmMatched10a <- glm(formula = count_mh ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m,
+                    family = poisson())
+
+summary(glmMatched10)
+
+
+glmMatched10b <- glm(formula = count_pt ~ om_flag + age + female + diag1 + membermo + hcc,
+                    data    = dta_m,
+                    family = poisson())
+
+summary(glmMatched10)
+```
+## per member per month results
+
+coefficient
+95% low
+95% high
+P value
+
+```{r results}
+
+# uncontrolled differences without/with OM
+print("summary stats for non-OM")
+summary(dta_m[dta_m$om_flag==0,])
+print("summary stats for OM")
+summary(dta_m[dta_m$om_flag==1,])
+print("total cost among non-OM utilizers, PMPM")
+summary(dta_m$cost_md[(dta_m$om_flag==0)&(dta_m$cost_md>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_md>0)]))
+print("total cost among OM utilizers, PMPM")
+summary(dta_m$cost_md[(dta_m$om_flag==1)&(dta_m$cost_md>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_md>0)]))
+print("ER cost among non-OM utilizers, PMPM")
+summary(dta_m$cost_er[(dta_m$om_flag==0)&(dta_m$cost_er>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_er>0)]))
+print("ER cost among OM utilizers, PMPM")
+summary(dta_m$cost_er[(dta_m$om_flag==1)&(dta_m$cost_er>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_er>0)]))
+print("hosp cost among non-OM utilizers, PMPM")
+summary(dta_m$cost_hosp[(dta_m$om_flag==0)&(dta_m$cost_hosp>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_hosp>0)]))
+print("hosp cost among OM utilizers, PMPM")
+summary(dta_m$cost_hosp[(dta_m$om_flag==1)&(dta_m$cost_hosp>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_hosp>0)]))
+print("PCP cost among non-OM utilizers, PMPM")
+summary(dta_m$cost_pcp[(dta_m$om_flag==0)&(dta_m$cost_pcp>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_pcp>0)]))
+print("PCP cost among OM utilizers, PMPM")
+summary(dta_m$cost_pcp[(dta_m$om_flag==1)&(dta_m$cost_pcp>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_pcp>0)]))
+print("spec cost among non-OM utilizers, PMPM")
+summary(dta_m$cost_spec[(dta_m$om_flag==0)&(dta_m$cost_spec>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_spec>0)]))
+print("spec cost among OM utilizers, PMPM")
+summary(dta_m$cost_spec[(dta_m$om_flag==1)&(dta_m$cost_spec>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_spec>0)]))
+print("mh cost among non-OM utilizers, PMPM")
+summary(dta_m$cost_mh[(dta_m$om_flag==0)&(dta_m$cost_mh>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_mh>0)]))
+print("mh cost among OM utilizers, PMPM")
+summary(dta_m$cost_mh[(dta_m$om_flag==1)&(dta_m$cost_mh>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_mh>0)]))
+print("pt cost among non-OM utilizers, PMPM")
+summary(dta_m$cost_pt[(dta_m$om_flag==0)&(dta_m$cost_pt>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_pt>0)]))
+print("pt cost among OM utilizers, PMPM")
+summary(dta_m$cost_pt[(dta_m$om_flag==1)&(dta_m$cost_pt>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_pt>0)]))
+print("Rx cost among non-OM utilizers, PMPM")
+summary(dta_m$cost_rx[(dta_m$om_flag==0)&(dta_m$cost_rx>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_rx>0)]))
+print("Rx cost among OM utilizers, PMPM")
+summary(dta_m$cost_rx[(dta_m$om_flag==1)&(dta_m$cost_rx>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_rx>0)]))
+
+
+print("delta total cost per person per month")
+print((glmMatched1$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched1$coefficients)[2]-1.96*coef(summary(glmMatched1))[2,2])/mean(dta_m$membermo))
+print(((glmMatched1$coefficients)[2]+1.96*coef(summary(glmMatched1))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched1))[2,4])
+
+print("delta ER cost per person per month")
+print((glmMatched2$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched2$coefficients)[2]-1.96*coef(summary(glmMatched2))[2,2])/mean(dta_m$membermo))
+print(((glmMatched2$coefficients)[2]+1.96*coef(summary(glmMatched2))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched2))[2,4])
+
+print("delta hosp cost per person per month")
+print((glmMatched3$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched3$coefficients)[2]-1.96*coef(summary(glmMatched3))[2,2])/mean(dta_m$membermo))
+print(((glmMatched3$coefficients)[2]+1.96*coef(summary(glmMatched3))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched3))[2,4])
+
+print("delta PCP cost per person per month")
+print((glmMatched4$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched4$coefficients)[2]-1.96*coef(summary(glmMatched4))[2,2])/mean(dta_m$membermo))
+print(((glmMatched4$coefficients)[2]+1.96*coef(summary(glmMatched4))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched4))[2,4])
+
+print("delta spec cost per person per month")
+print((glmMatched5$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched5$coefficients)[2]-1.96*coef(summary(glmMatched5))[2,2])/mean(dta_m$membermo))
+print(((glmMatched5$coefficients)[2]+1.96*coef(summary(glmMatched5))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched5))[2,4])
+
+print("delta mh cost per person per month")
+print((glmMatched5a$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched5a$coefficients)[2]-1.96*coef(summary(glmMatched5a))[2,2])/mean(dta_m$membermo))
+print(((glmMatched5a$coefficients)[2]+1.96*coef(summary(glmMatched5a))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched5a))[2,4])
+
+print("delta pt cost per person per month")
+print((glmMatched5b$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched5b$coefficients)[2]-1.96*coef(summary(glmMatched5b))[2,2])/mean(dta_m$membermo))
+print(((glmMatched5b$coefficients)[2]+1.96*coef(summary(glmMatched5b))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched5b))[2,4])
+
+print("delta Rx cost per person per month")
+print((glmMatched6$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched6$coefficients)[2]-1.96*coef(summary(glmMatched6))[2,2])/mean(dta_m$membermo))
+print(((glmMatched6$coefficients)[2]+1.96*coef(summary(glmMatched6))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched6))[2,4])
+
+print("delta ER count per person per month")
+print((glmMatched7$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched7$coefficients)[2]-1.96*coef(summary(glmMatched7))[2,2])/mean(dta_m$membermo))
+print(((glmMatched7$coefficients)[2]+1.96*coef(summary(glmMatched7))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched7))[2,4])
+
+print("delta hosp count per person per month")
+print((glmMatched8$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched8$coefficients)[2]-1.96*coef(summary(glmMatched8))[2,2])/mean(dta_m$membermo))
+print(((glmMatched8$coefficients)[2]+1.96*coef(summary(glmMatched8))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched8))[2,4])
+
+print("delta PCP count per person per month")
+print((glmMatched9$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched9$coefficients)[2]-1.96*coef(summary(glmMatched9))[2,2])/mean(dta_m$membermo))
+print(((glmMatched9$coefficients)[2]+1.96*coef(summary(glmMatched9))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched9))[2,4])
+
+print("delta spec count per person per month")
+print((glmMatched10$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched10$coefficients)[2]-1.96*coef(summary(glmMatched10))[2,2])/mean(dta_m$membermo))
+print(((glmMatched10$coefficients)[2]+1.96*coef(summary(glmMatched10))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched10))[2,4])
+
+print("delta mh count per person per month")
+print((glmMatched10a$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched10a$coefficients)[2]-1.96*coef(summary(glmMatched10a))[2,2])/mean(dta_m$membermo))
+print(((glmMatched10a$coefficients)[2]+1.96*coef(summary(glmMatched10a))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched10a))[2,4])
+
+print("delta pt count per person per month")
+print((glmMatched10b$coefficients)[2]/mean(dta_m$membermo))
+print(((glmMatched10b$coefficients)[2]-1.96*coef(summary(glmMatched10b))[2,2])/mean(dta_m$membermo))
+print(((glmMatched10b$coefficients)[2]+1.96*coef(summary(glmMatched10b))[2,2])/mean(dta_m$membermo))
+print(coef(summary(glmMatched10b))[2,4])
+
+save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
 
 ```
