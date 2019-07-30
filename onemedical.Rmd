@@ -2,24 +2,29 @@
 title: "One Medical"
 author: "Sanjay Basu"
 date: "7/26/2019"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
 ---
 
 ##Import dependencies/packages
 
 ```{r setup, include=FALSE}
 rm(list=ls())
-knitr::opts_chunk$set(echo = TRUE)
-install.packages('tidyverse', repos = "http://cran.us.r-project.org")
-install.packages('lubridate', repos = "http://cran.us.r-project.org")
-install.packages('readr', repos = "http://cran.us.r-project.org")
-install.packages('tableone', repos = "http://cran.us.r-project.org")
-install.packages('MatchIt', repos = "http://cran.us.r-project.org")
-install.packages('devtools', repos = "http://cran.us.r-project.org")
-devtools::install_github("healthactuary/cmshcc")
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, message = FALSE, cache.lazy = FALSE)
+# install.packages('tidyverse', repos = "http://cran.us.r-project.org")
+# install.packages('lubridate', repos = "http://cran.us.r-project.org")
+# install.packages('readr', repos = "http://cran.us.r-project.org")
+# install.packages('stringr', repos = "http://cran.us.r-project.org")
+# install.packages('tableone', repos = "http://cran.us.r-project.org")
+# install.packages('MatchIt', repos = "http://cran.us.r-project.org")
+# install.packages('devtools', repos = "http://cran.us.r-project.org")
+# devtools::install_github("healthactuary/cmshcc")
 library(tidyverse)
 library(lubridate)
 library(readr)
+library(stringr)
 library(tableone)
 library(tools)
 library(MatchIt)
@@ -28,21 +33,17 @@ library(cmshcc)
 
 ##Import datasets
 
-SpaceX members, medical claims, and pharmacy claims
-- unfortunately don't have the demographics data for the 1/16-9/16 claims, commenting that out for now
-
 ```{r warning = FALSE, message = FALSE}
 setwd("~/Box/Analytics Team/Research/Research projects/One medical")
 mbr <- read_csv("spacex_members.csv")
 clm <- read_csv("spacex_claims.csv")
 rx <- read_csv("spacex_pharmacy.csv")
 ctr <- read_csv("SpaceX Health Center Claims 1016 to 1217.csv")
-#ctr2 <- read_csv("SpaceX Health Center Claims 0116 to 0916.csv")
 vrt <- read_csv("SpaceX Member Virtual Services 0721919.csv")
-feesch <- read_csv("feesch.csv")
+feesch <- read_csv("FeesRVU_by_CPT_01_20190723_140220_392625.csv")
 ```
 
-## custom functions
+##Custom functions
 
 ```{r cust}
 
@@ -54,18 +55,13 @@ getmode <- function(v) {
 
 ```
 
-
 ##Format claims to combine CH claims to OM Center claims  
-
-add in only those Center claims not already in CH dataset [overlap in ctr2 file]
 
 ```{r ch plus center}
 clm_dol = clm
 clm_dol$`Metaclaims Analytics Medical Paid Amount Ch` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Paid Amount Ch`))
-clm_dol$`Metaclaims Analytics Medical First Name` = tolower(clm_dol$`Metaclaims Analytics Medical First Name`)
-clm_dol$`Metaclaims Analytics Medical First Name` = toTitleCase(clm_dol$`Metaclaims Analytics Medical First Name`)
-clm_dol$`Metaclaims Analytics Medical Last Name` = tolower(clm_dol$`Metaclaims Analytics Medical Last Name`)
-clm_dol$`Metaclaims Analytics Medical Last Name` = toTitleCase(clm_dol$`Metaclaims Analytics Medical Last Name`)
+clm_dol$`Metaclaims Analytics Medical First Name` = str_to_title(clm_dol$`Metaclaims Analytics Medical First Name`)
+clm_dol$`Metaclaims Analytics Medical Last Name` = str_to_title(clm_dol$`Metaclaims Analytics Medical Last Name`)
 
 clm_sub = clm_dol %>%
   mutate(personid = (`Metaclaims Analytics Medical Person ID`),
@@ -114,7 +110,7 @@ clm_sub = clm_dol %>%
 clm_sub$age[clm_sub$age<0] = 0
 
 ctr_sub = ctr
-ctr_sub$Name = tolower(ctr$Name)
+ctr_sub$Name = str_to_title(ctr$Name)
 ctr_sub$Name = toTitleCase(ctr$Name)
 ctr_sub$`Primary Diagnosis` = as.character(gsub("[\\.]", "", ctr_sub$`Primary Diagnosis`))
 
@@ -148,84 +144,27 @@ ctr_sub$pos[ctr_sub$mh_flag==1] =  "Mental Health and Substance Use"
 ctr_sub$pos[ctr_sub$pt_flag==1] = "Physical Medicine" 
 
 
-# fill in zero costs with pay schedule for OM center
-# om_pay_sch = clm_dol %>%
-#   mutate( om_flag = ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460695495")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467701821))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460741732")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073862256))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="362169147")&(`Metaclaims Analytics Medical Billing Prov Npi`==1336709112))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="814542216")&(`Metaclaims Analytics Medical Billing Prov Npi`==1518438712))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="383906267")&(`Metaclaims Analytics Medical Billing Prov Npi`==1528538774))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="471708588")&(`Metaclaims Analytics Medical Billing Prov Npi`==1184014854))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="271346767")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467781641))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="911942315")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073553947))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812141065")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467800383))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="452282261")&(`Metaclaims Analytics Medical Billing Prov Npi`==1962798645))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="273009385")&(`Metaclaims Analytics Medical Billing Prov Npi`==1861709487))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812980907")&(`Metaclaims Analytics Medical Billing Prov Npi`==1598214397))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="270243800")&(`Metaclaims Analytics Medical Billing Prov Npi`==1144457151))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="020619758")&(`Metaclaims Analytics Medical Billing Prov Npi`==1497786883))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="461773122")&(`Metaclaims Analytics Medical Billing Prov Npi`==1508103169))|
-#            ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1417382102)),
-#           CPT = `Metaclaims Analytics Medical Procedure Code`) %>%
-#   filter(om_flag==1) %>%
-#   group_by(CPT) %>%
-#   summarise(cost_md = mean(`Metaclaims Analytics Medical Paid Amount Ch`, na.rm=T))
 
+feesch_sub = feesch %>%
+  mutate(cost_md = Fee) %>%
+  select(CPT,cost_md)
 
-ctr_sub = full_join(ctr_sub,feesch,by="CPT") %>%  # REPLACE BY OFFICIAL FEE SCHEDULE
+ctr_sub = full_join(ctr_sub,feesch_sub,by="CPT") %>%  
   select(-CPT) %>%
   mutate(cnt_flag = 1)
-
-
-# ctr2_sub = ctr2
-# ctr2_sub$Name = tolower(ctr2_sub$`Patient Name`)
-# ctr2_sub$Name = toTitleCase(ctr2_sub$Name)
-# ctr2_sub$`Primary Diagnosis` = "NA"
-# ctr2_sub = ctr2_sub[ctr2_sub$`Payer Name`!="Collective Health",]
-# ctr2_sub$cost_md = as.numeric(gsub("[\\$,]", "", ctr2_sub$Charge))
-# 
-# ctr2_sub = ctr2_sub %>%
-#   separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
-#   mutate(dos = mdy(`Ledger Date`)) %>%
-#   group_by(firstname,lastname,dos)%>%
-#   mutate(age = as.numeric("NA"),
-#          female= as.numeric("NA"),
-#          om_flag = 1,
-#          em_flag = ((`Procedure Code`=='99201')|
-#                     (`Procedure Code`=='99202')|
-#                     (`Procedure Code`=='99203')|
-#                     (`Procedure Code`=='99204')|
-#                     (`Procedure Code`=='99205')|
-#                     (`Procedure Code`=='99211')|
-#                     (`Procedure Code`=='99212')|
-#                     (`Procedure Code`=='99213')|
-#                     (`Procedure Code`=='99214')|
-#                     (`Procedure Code`=='99215')),
-#          diag1 = "NA",
-#          pos = "Office Visits - PCP",
-#          cost_md = sum(cost_md)) %>%
-#   select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,cost_md) %>%
-#   distinct()
 
 
 
 ```
 
-
 ## OM attribution and utilization counts
-
-Unique combination of NPI / Tax ID should be used to identify OM claims 
-OM attribution for most Evaluation and Management (E&M) Visits – The highest percentage of primary care E&M visits: 99201 – 99205, 99211 - 99215
-Util counts with replacement of NAs with 0 by service category
-
-    
+  
 ```{r elig clm}
 
-clm_tot = bind_rows(clm_sub,ctr_sub) #%>%
-#  bind_rows(ctr2_sub)
+clm_tot = bind_rows(clm_sub,ctr_sub) 
   
 clm_tot = clm_tot %>%
-  group_by(firstname, lastname,age, female) %>%
+  group_by(firstname, lastname,female) %>%
   filter(any(em_flag==1)) %>%
   summarise(om_flag = getmode(om_flag[em_flag==1]),
             diag1 = getmode(diag1),
@@ -243,23 +182,18 @@ clm_tot = clm_tot %>%
             count_pt = sum(pos=="Physical Medicine"),
             cost_pt = sum(cost_md[pos=="Physical Medicine"]),
             cnt_flag = max(cnt_flag)) %>%   
-  select(firstname,lastname,age, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,count_mh,cost_mh,count_pt,cost_pt,cnt_flag) %>%
+  select(firstname,lastname, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,count_mh,cost_mh,count_pt,cost_pt,cnt_flag) %>%
   distinct()
 clm_tot$female[is.na(clm_tot$female)==1]=0
 
 ```
 
-
 ##Member org
-
-organize member data 
 
 ```{r elig mbr}
 mbr_sub = mbr
-mbr_sub$`Analytics Member Months First Name` = tolower(mbr_sub$`Analytics Member Months First Name`)
-mbr_sub$`Analytics Member Months First Name` = toTitleCase(mbr_sub$`Analytics Member Months First Name`)
-mbr_sub$`Analytics Member Months Last Name` = tolower(mbr_sub$`Analytics Member Months Last Name`)
-mbr_sub$`Analytics Member Months Last Name` = toTitleCase(mbr_sub$`Analytics Member Months Last Name`)
+mbr_sub$`Analytics Member Months First Name` = str_to_title(mbr_sub$`Analytics Member Months First Name`)
+mbr_sub$`Analytics Member Months Last Name` = str_to_title(mbr_sub$`Analytics Member Months Last Name`)
 
 mbr_sub = mbr_sub %>%
   mutate(personid = `Analytics Member Months Person ID`) %>%
@@ -272,22 +206,17 @@ mbr_sub = mbr_sub %>%
          lastname = `Analytics Member Months Last Name`,
          membermo = interval(start,end)/months(1),
          DOB = `Analytics Member Months Date of Birth Date`) %>%
-  # filter(start=="2016-01-01",
-  #        end=="2019-12-31") %>%
   select(age, female, personid, firstname, lastname, membermo, DOB) %>%
   distinct()
 ```
-
 
 ##Add in pharmacy claims  
 
 ```{r elig rx}
 rx_dol = rx
 rx_dol$`Analytics Claims Pharmacy Paid Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Paid Amount`))
-rx_dol$`Analytics Claims Pharmacy First Name` = tolower(rx_dol$`Analytics Claims Pharmacy First Name`)
-rx_dol$`Analytics Claims Pharmacy First Name` = toTitleCase(rx_dol$`Analytics Claims Pharmacy First Name`)
-rx_dol$`Analytics Claims Pharmacy Last Name` = tolower(rx_dol$`Analytics Claims Pharmacy Last Name`)
-rx_dol$`Analytics Claims Pharmacy Last Name` = toTitleCase(rx_dol$`Analytics Claims Pharmacy Last Name`)
+rx_dol$`Analytics Claims Pharmacy First Name` = str_to_title(rx_dol$`Analytics Claims Pharmacy First Name`)
+rx_dol$`Analytics Claims Pharmacy Last Name` = str_to_title(rx_dol$`Analytics Claims Pharmacy Last Name`)
 
 rx_sub = rx_dol %>%
   mutate(personid = `Analytics Claims Pharmacy Person ID`) %>%
@@ -302,13 +231,13 @@ rx_sub = rx_dol %>%
 rx_sub$age[rx_sub$age<0] = 0
 ```
 
-## virtual visits
+
+##Virtual visits
+
 ```{r vrt}
 vrt_sub = vrt
-vrt_sub$`dphi.patient_first_name` = tolower(vrt_sub$`dphi.patient_first_name`)
-vrt_sub$`dphi.patient_first_name` = toTitleCase(vrt_sub$`dphi.patient_first_name`)
-vrt_sub$`dphi.patient_last_name` = tolower(vrt_sub$`dphi.patient_last_name`)
-vrt_sub$`dphi.patient_last_name` = toTitleCase(vrt_sub$`dphi.patient_last_name`)
+vrt_sub$`dphi.patient_first_name` = str_to_title(vrt_sub$`dphi.patient_first_name`)
+vrt_sub$`dphi.patient_last_name` = str_to_title(vrt_sub$`dphi.patient_last_name`)
 
 vrt_sub = vrt_sub %>%
   mutate(vrt_flag = 1,
@@ -320,21 +249,23 @@ vrt_sub = vrt_sub %>%
 
 ```
 
-## HCC risk score
+##HCC risk score
+
 ```{r hcc}
 
 spacex_dat = mbr_sub %>% 
   full_join(clm_tot, by = c("firstname","lastname","female")) %>%
-  full_join(rx_sub, by = c("firstname","lastname","female")) %>%
+  full_join(rx_sub, by = c("firstname","lastname")) %>%
   full_join(vrt_sub, by = c("firstname","lastname")) %>%
   mutate(om_flag = replace_na(om_flag,0),
          vrt_flag = replace_na(vrt_flag,0),
-         cnt_flag = replace_na(cnt_flag,0))
+         cnt_flag = replace_na(cnt_flag,0)) %>%
+  distinct()
 
 PERSON = spacex_dat %>%
   ungroup() %>%
   mutate(HICNO = personid.x,
-         SEX = if_else(female==1,"F","M"),
+         SEX = if_else(female.x==1,"F","M"),
          DOB = DOB,
          MCAID = 0,
          NMCAID = 0,
@@ -362,15 +293,12 @@ spacex_dat = mbr_sub %>%
   mutate(om_flag = replace_na(om_flag,0),
          vrt_flag = replace_na(vrt_flag,0),
          cnt_flag = replace_na(cnt_flag,0),
-         hcc = Community_NonDual_Aged)
+         hcc = Community_NonDual_Aged) %>%
+  distinct()
 
 ```
 
-## Pre-match outcome metrics
-Key outcome variables vs. control
-pmpm by service type 
-Utilization rates by service type
-Episode-based cost analyses for MH and PT
+##Pre-match outcome metrics
 
 ```{r outcomes}
 
@@ -405,7 +333,7 @@ spacex_dat %>%
 
 ```
 
-## replace NAs
+##Replace NAs
 
 ```{r na}
 
@@ -427,10 +355,15 @@ spacex_dat = mbr_sub %>%
          cost_pcp = replace_na(cost_pcp,0),
          count_spec = replace_na(count_spec,0),
          cost_spec = replace_na(cost_spec,0),
+         count_mh = replace_na(count_mh,0),
+         count_pt = replace_na(count_pt,0),
+         cost_pt = replace_na(cost_pt,0),
+         cost_mh = replace_na(cost_mh,0),
          cost_rx = replace_na(cost_rx,0),
          hcc = Community_NonDual_Aged,
          hcc = replace_na(hcc,0)) %>%
-  select(age, female, membermo, hcc, om_flag,diag1,cost_md,count_er,cost_er,count_hosp,count_mh,count_pt,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,cost_rx,cost_mh,cost_pt,cnt_flag,vrt_flag)
+  select(age, female, membermo, hcc, om_flag,diag1,cost_md,count_er,cost_er,count_hosp,count_mh,count_pt,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,cost_rx,cost_mh,cost_pt,cnt_flag,vrt_flag) %>%
+  distinct()
 
 summary(spacex_dat)
 
@@ -438,48 +371,26 @@ save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedic
 
 ```
 
+## CCS cat
+
+```{r ccs}
+ccs <- read_csv("ccs_dx_icd10cm_2018_1.csv")
+ccs  =ccs %>%
+  mutate(diag1 = `ICD-10-CM CODE`,
+         ccs = `CCS CATEGORY`) %>%
+  select(diag1, ccs)
+spacex_dat = spacex_dat %>%
+  left_join(ccs, c("diag1"))
+save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
+
+```
+
 ##Matching
 
-nearest neighbor match via propensity score: 
-https://gking.harvard.edu/ations/matchit-nonparametric-preprocessing-parametric-causal-inference
-page 7: "Nearest neighbor matching selects the r (default
-= 1) best control matches for each individual in the treatment group
-(excluding those discarded using the discard option). Matching is done
-using a distance measure specified by the distance option (default =
-logit, i.e., a logistic regression model is used to estimate the
-propensity score, defined as the probability of receiving treatment,
-conditional on the covariates). Matches are chosen for each treated
-unit one at a time, with the order specified by the m.order command
-(default = largest to smallest). At each matching step we choose the
-control unit that is not yet matched but is closest to the treated
-unit on the distance measure."
-
-
-NOTE:
-if you get this error:
-
-Error: vector memory exhausted (limit reached?)
-
-Try:
-
-Step 1: Open terminal,
-
-Step 2:
-cd ~
-touch .Renviron
-open .Renviron
-
-Step 3: Save the following as the first line of .Renviron:
-
-R_MAX_VSIZE=100Gb 
-
-Step 4: Restart R/RStudio and re-run the matching process
-
-
 ```{r matching}
-spacex_dat_cov <- c('age', 'female', 'diag1', 'membermo', 'hcc')
+spacex_dat_cov <- c('age', 'female', 'diag1', 'membermo', 'hcc', 'ccs')
 
-spacex_dat_nomiss <- spacex_dat %>%  # MatchIt does not allow missing values
+spacex_dat_nomiss <- spacex_dat %>%  
   select(cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,cost_rx,count_mh,cost_mh,count_pt,cost_pt,om_flag,cnt_flag,vrt_flag, one_of(spacex_dat_cov)) %>%
   na.omit()
 
@@ -487,7 +398,12 @@ spacex_dat_nomiss = as.data.frame(spacex_dat_nomiss)
 
 start_time <- Sys.time()
 
-mod_match <- matchit(om_flag ~ age + female + diag1 + membermo + hcc,
+spacex_dat_nomiss = spacex_dat_nomiss %>% 
+  mutate(agecat = 1*(age<4) + 2*(age>=4)*(age<11) + 3*(age>=11)*(age<22)+4*(age>=22)*(age<26)+5*(age>=26)*(age<29)+6*(age>=29)*(age<31)+7*(age>=31)*(age<35)+8*(age>=35)*(age<39)+9*(age>=39)*(age<48)+10*(age>=48)*(age<77)+11*(age>=77),
+         hcccat = 1*(hcc==0) + 2*(hcc>0)&(hcc<1) + 3*(hcc>=1),
+         mmcat = 1*(membermo<39) + 2*(membermo>=39 & membermo<48) + 3*(membermo>=48))
+
+mod_match <- matchit(om_flag ~ agecat + female + ccs + hcccat + mmcat,
                      method = "nearest", data = spacex_dat_nomiss)
 end_time <- Sys.time()
 
@@ -499,8 +415,7 @@ save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedic
 
 ```
 
-
-# Assessments of the covariance balance in the matched sample 
+#Assessments of the covariance balance in the matched sample 
 
 ```{r assess}
 dta_m <- match.data(mod_match)
@@ -511,90 +426,89 @@ dta_m %>%
   select(one_of(spacex_dat_cov)) %>%
   summarise_all(funs(mean))
 
-## Construct a table
-tabMatched <- CreateTableOne(vars = spacex_dat_cov, strata = "om_flag", data = dta_m, test = T)
-## Show table with SMD
-print(tabMatched, smd = TRUE)
+print(CreateTableOne(vars = c("agecat", "female", "ccs", "hcccat", "mmcat"), strata = "om_flag", data = dta_m, test = T), smd = TRUE)
+print(CreateTableOne(vars = c("age", "female", "ccs", "hcc", "membermo"), strata = "om_flag", data = dta_m, test = T), smd = TRUE)
 
 ```
 
-# The estimated treatment effect 
+#Treatment effect 
 
 ```{r ate}
-glmMatched1 <- glm(formula = cost_md ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m)
+glmMatched1 <- glm(formula = cost_md ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m)
 summary(glmMatched1)
 
-glmMatched2 <- glm(formula = cost_er ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m)
+glmMatched2 <- glm(formula = cost_er ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m)
 summary(glmMatched2)
 
-glmMatched3 <- glm(formula = cost_hosp ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m)
+glmMatched3 <- glm(formula = cost_hosp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m)
 summary(glmMatched3)
 
-glmMatched4 <- glm(formula = cost_pcp ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m)
+glmMatched4 <- glm(formula = cost_pcp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m)
 summary(glmMatched4)
 
-glmMatched5 <- glm(formula = cost_spec ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m)
+glmMatched5 <- glm(formula = cost_spec ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m)
 summary(glmMatched5)
 
 
-glmMatched5a <- glm(formula = cost_mh ~ om_flag + age + female + diag1 + membermo + hcc,
+glmMatched5a <- glm(formula = cost_mh ~ om_flag + age + female + factor(ccs) + membermo + hcc,
                     data    = dta_m)
 summary(glmMatched5a)
 
 
-glmMatched5b <- glm(formula = cost_pt ~ om_flag + age + female + diag1 + membermo + hcc,
+glmMatched5b <- glm(formula = cost_pt ~ om_flag + age + female + factor(ccs) + membermo + hcc,
                     data    = dta_m)
 summary(glmMatched5b)
 
 
-glmMatched6 <- glm(formula = cost_rx ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m)
+glmMatched6 <- glm(formula = cost_rx ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m)
 summary(glmMatched6)
 
 
-glmMatched7 <- glm(formula = count_er ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m,
-                    family = poisson())
+glmMatched7 <- glm(formula = count_er ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
 
 summary(glmMatched7)
 
-glmMatched8 <- glm(formula = count_hosp ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m,
-                    family = poisson())
+glmMatched8 <- glm(formula = count_hosp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
 
 summary(glmMatched8)
 
-glmMatched9 <- glm(formula = count_pcp ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m,
-                    family = poisson())
+glmMatched9 <- glm(formula = count_pcp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                   data    = dta_m,
+                   family = poisson())
 summary(glmMatched9)
 
-glmMatched10 <- glm(formula = count_spec ~ om_flag + age + female + diag1 + membermo + hcc,
+glmMatched10 <- glm(formula = count_spec ~ om_flag + age + female + factor(ccs) + membermo + hcc,
                     data    = dta_m,
                     family = poisson())
 
 summary(glmMatched10)
 
 
-glmMatched10a <- glm(formula = count_mh ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m,
-                    family = poisson())
+glmMatched10a <- glm(formula = count_mh ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                     data    = dta_m,
+                     family = poisson())
 
-summary(glmMatched10)
+summary(glmMatched10a)
 
 
-glmMatched10b <- glm(formula = count_pt ~ om_flag + age + female + diag1 + membermo + hcc,
-                    data    = dta_m,
-                    family = poisson())
+glmMatched10b <- glm(formula = count_pt ~ om_flag + age + female + factor(ccs) + membermo + hcc,
+                     data    = dta_m,
+                     family = poisson())
 
-summary(glmMatched10)
+summary(glmMatched10b)
 ```
-## per member per month results
+
+##Per member per month results
 
 coefficient
 95% low
