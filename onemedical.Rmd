@@ -396,7 +396,7 @@ dta_m %>%
   summarise_all(funs(mean))
 
 # continuous
-print(CreateTableOne(vars = c("age", "female", "hcc", "mm", "ccs"), strata = "om_flag", data = dta_m, test = T), smd = TRUE)
+print(CreateTableOne(vars = c("age", "female", "hcc", "mm", "ccs"), strata = "om_flag", data = dta_m, test = T), smd = TRUE, noSpaces = TRUE)
 
 ```
 
@@ -427,10 +427,28 @@ dta_run = dta_m %>%
 
 ```{r table 1}
 # pre-match
-print(CreateTableOne(data =spacex_dat_ana, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "vrt_flag" ,"cnt_flag"), strata="om_flag", test = T), smd = TRUE)
+prem = spacex_dat_ana %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt
+  )
+print(CreateTableOne(data =prem, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "vrt_flag" ,"cnt_flag"), strata="om_flag", test = T), smd = TRUE, contDigits=3, catDigits=3, noSpaces = TRUE)
 
 # post-match
-print(CreateTableOne(data =dta_m, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "vrt_flag" ,"cnt_flag"), strata="om_flag", test = T), smd = TRUE)
+postm = dta_m %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt
+  )
+
+print(CreateTableOne(data =postm, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "vrt_flag" ,"cnt_flag"), strata="om_flag", test = F), smd = TRUE, contDigits=3, catDigits=3, noSpaces = TRUE)
+
 
 
 
@@ -524,27 +542,33 @@ exponentiate <- function(x) ((exp(x)-1)*100)
 
 stargazer::stargazer(glmMatched1, glmMatched2, glmMatched3, glmMatched4, glmMatched5, glmMatched5a, glmMatched5b, glmMatched6,
           title="Spend Results", single.row=TRUE,
-          type = "text",
+          type = "html",
           keep=c("om_flag","age","female","mm","hcc"),
           ci=TRUE, ci.level=0.95,
           apply.coef=exponentiate,
-          digits = 1)
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx"))
 
 stargazer::stargazer(glmMatched7, glmMatched8, glmMatched9, glmMatched10, glmMatched10a, glmMatched10b,
           title="Utilization Results", single.row=TRUE,
-          type = "text",
+          type = "html",
           keep=c("om_flag","age","female","mm","hcc"),
           ci=TRUE, ci.level=0.95,
           apply.coef=exponentiate,
-          digits = 1)
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
 
 stargazer::stargazer(glmMatched2c, glmMatched3c, glmMatched4c, glmMatched5c, glmMatched5ca, glmMatched5cb, 
           title="Cost per Utilization Results", single.row=TRUE,
-          type = "text",
+          type = "html",
           keep=c("om_flag","age","female","mm","hcc"),
           ci=TRUE, ci.level=0.95,
           apply.coef=exponentiate,
-          digits = 1)
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
 
 save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
 
