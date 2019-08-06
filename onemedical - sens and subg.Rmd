@@ -1,15 +1,17 @@
 ---
-title: "onemedical - sensitivity analyses"
+title: "One Medical - sensitivity analyses"
 author: "Sanjay Basu"
-date: "7/26/2019"
+date: "8/6/2019"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(stargazer)
 load("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
 ```
 
@@ -17,20 +19,19 @@ load("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RDa
 - exclude NICU and newborns, dialysis, pregnancy, hospice, rehab, and transplants
 - cap claimants to $35k/12mo
 - exclude those without a min # of member-months: 11
-- compare MH claim $/freq pre vs post Lyra
 
 
 ```{r sens}
 
-sens_m = dta_m %>%
+sens_m = dta_run %>%
   filter(age != 0,
          diag1 != "Z992",
          diag1 != "Z340",
          diag1 != "Z515",
          diag1 != "F0",
          diag1 != "T86",
-         (cost_md/membermo) < (35000/12),
-         membermo>11) 
+         (cost_md/mm) < (35000/12),
+         mm>11) 
 
 
 ```
@@ -38,81 +39,120 @@ sens_m = dta_m %>%
 # The estimated treatment effect 
 
 
-```{r sens ate}
-glmMatched1_s <- glm(formula = cost_md ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched1_s)
+```{r ate}
 
-glmMatched2_s <- glm(formula = cost_er ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched2_s)
+glmMatched1_s <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
 
-glmMatched3_s <- glm(formula = cost_hosp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched3_s)
+glmMatched2_s <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
 
-glmMatched4_s <- glm(formula = cost_pcp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched4_s)
+glmMatched3_s <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
 
-glmMatched5_s <- glm(formula = cost_spec ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched5_s)
+glmMatched4_s <- glm(formula = logcost_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+glmMatched5_s <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
 
 
-glmMatched5a_s <- glm(formula = cost_mh ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                      data    = dta_m)
-summary(glmMatched5a_s)
+glmMatched5a_s <- glm(formula = logcost_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
 
 
-glmMatched5b_s <- glm(formula = cost_pt ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                      data    = dta_m)
-summary(glmMatched5b_s)
+glmMatched5b_s <- glm(formula = logcost_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
 
 
-glmMatched6_s <- glm(formula = cost_rx ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched6_s)
+glmMatched6_s <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
 
 
-glmMatched7_s <- glm(formula = count_er ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m,
-                     family = poisson())
-
-summary(glmMatched7_s)
-
-glmMatched8_s <- glm(formula = count_hosp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m,
-                     family = poisson())
-
-summary(glmMatched8_s)
-
-glmMatched9_s <- glm(formula = count_pcp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m,
-                     family = poisson())
-summary(glmMatched9_s)
-
-glmMatched10_s <- glm(formula = count_spec ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                      data    = dta_m,
-                      family = poisson())
-
-summary(glmMatched10_s)
+glmMatched7_s <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
 
 
-glmMatched10a_s <- glm(formula = count_mh ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                       data    = dta_m,
-                       family = poisson())
-
-summary(glmMatched10a_s)
+glmMatched8_s <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
 
 
-glmMatched10b_s <- glm(formula = count_pt ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                       data    = dta_m,
-                       family = poisson())
+glmMatched9_s <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
 
-summary(glmMatched10b_s)
+glmMatched10_s <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+
+
+glmMatched10a_s <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+
+glmMatched10b_s <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+glmMatched2c_s <- glm(formula = cost_per_er ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+glmMatched3c_s <- glm(formula = cost_per_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+glmMatched4c_s <- glm(formula = cost_per_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+glmMatched5c_s <- glm(formula = cost_per_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+
+glmMatched5ca_s <- glm(formula = cost_per_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+glmMatched5cb_s <- glm(formula = cost_per_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
 ```
 
+#Sens table results 
+```{r coef}
+
+exponentiate <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1_s, glmMatched2_s, glmMatched3_s, glmMatched4_s, glmMatched5_s, glmMatched5a_s, glmMatched5b_s, glmMatched6_s,
+                     title="Spend Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag","age","female","mm","hcc"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx"))
+
+stargazer::stargazer(glmMatched7_s, glmMatched8_s, glmMatched9_s, glmMatched10_s, glmMatched10a_s, glmMatched10b_s,
+                     title="Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag","age","female","mm","hcc"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+stargazer::stargazer(glmMatched2c_s, glmMatched3c_s, glmMatched4c_s, glmMatched5c_s, glmMatched5ca_s, glmMatched5cb_s, 
+                     title="Cost per Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag","age","female","mm","hcc"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+
+```
 
 ## subgroup analyses:
 - onsite participant vs not
@@ -123,77 +163,463 @@ cnt_flag
 vrt_flag
 
 
+
 ```{r hte}
-glmMatched1_g <- glm(formula = cost_md ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched1_g)
 
-glmMatched2_g <- glm(formula = cost_er ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched2_g)
+glmMatched1_g <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
 
-glmMatched3_g <- glm(formula = cost_hosp ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched3_g)
+glmMatched2_g <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
 
-glmMatched4_g <- glm(formula = cost_pcp ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched4_g)
+glmMatched3_g <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
 
-glmMatched5_g <- glm(formula = cost_gpec ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched5_g)
+glmMatched4_g <- glm(formula = logcost_pcp ~om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
+
+glmMatched5_g <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
 
 
-glmMatched5a_g <- glm(formula = cost_mh ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                      data    = dta_m)
-summary(glmMatched5a_g)
+glmMatched5a_g <- glm(formula = logcost_mh ~om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run[dta_run$cnt_flag==1,])
 
 
-glmMatched5b_g <- glm(formula = cost_pt ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                      data    = dta_m)
-summary(glmMatched5b_g)
+glmMatched5b_g <- glm(formula = logcost_pt ~om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run[dta_run$cnt_flag==1,])
 
 
-glmMatched6_g <- glm(formula = cost_rx ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m)
-summary(glmMatched6_g)
+glmMatched6_g <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
 
 
-glmMatched7_g <- glm(formula = count_er ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m,
-                     family = poisson())
-
-summary(glmMatched7_g)
-
-glmMatched8_g <- glm(formula = count_hosp ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m,
-                     family = poisson())
-
-summary(glmMatched8_g)
-
-glmMatched9_g <- glm(formula = count_pcp ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m,
-                     family = poisson())
-summary(glmMatched9_g)
-
-glmMatched10_g <- glm(formula = count_gpec ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                      data    = dta_m,
-                      family = poisson())
-
-summary(glmMatched10_g)
+glmMatched7_g <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
 
 
-glmMatched10a_g <- glm(formula = count_mh ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                       data    = dta_m,
-                       family = poisson())
-
-summary(glmMatched10a_g)
+glmMatched8_g <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
 
 
-glmMatched10b_g <- glm(formula = count_pt ~ om_flag + cnt_flag + vrt_flag+ om_flag*cnt_flag + om_flag*vrt_flag + age + female + factor(ccs) + membermo + hcc,
-                       data    = dta_m,
-                       family = poisson())
+glmMatched9_g <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run[dta_run$cnt_flag==1,])
 
-summary(glmMatched10b_g)
+glmMatched10_g <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run[dta_run$cnt_flag==1,])
+
+
+
+glmMatched10a_g <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==1,])
+
+
+
+glmMatched10b_g <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==1,])
+
+
+glmMatched2c_g <- glm(formula = cost_per_er ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run[dta_run$cnt_flag==1,])
+
+glmMatched3c_g <- glm(formula = cost_per_hosp ~om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run[dta_run$cnt_flag==1,])
+
+glmMatched4c_g <- glm(formula = cost_per_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run[dta_run$cnt_flag==1,])
+
+glmMatched5c_g <- glm(formula = cost_per_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run[dta_run$cnt_flag==1,])
+
+
+glmMatched5ca_g <- glm(formula = cost_per_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==1,])
+
+
+glmMatched5cb_g <- glm(formula = cost_per_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==1,])
+
+```
+
+#Subgroup table results 
+```{r coef}
+
+exponentiate <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1_g, glmMatched2_g, glmMatched3_g, glmMatched4_g, glmMatched5_g, glmMatched5a_g, glmMatched5b_g, glmMatched6_g,
+                     title="Spend Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx"))
+
+stargazer::stargazer(glmMatched7_g, glmMatched8_g, glmMatched9_g, glmMatched10_g, glmMatched10a_g, glmMatched10b_g,
+                     title="Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+stargazer::stargazer(glmMatched2c_g, glmMatched3c_g, glmMatched4c_g, glmMatched5c_g, glmMatched5ca_g, glmMatched5cb_g, 
+                     title="Cost per Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+
+```
+
+```{r hte}
+
+glmMatched1_g <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+glmMatched2_g <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+glmMatched3_g <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+glmMatched4_g <- glm(formula = logcost_pcp ~om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+glmMatched5_g <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched5a_g <- glm(formula = logcost_mh ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched5b_g <- glm(formula = logcost_pt ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched6_g <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched7_g <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched8_g <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched9_g <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$cnt_flag==0,])
+
+glmMatched10_g <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$cnt_flag==0,])
+
+
+
+glmMatched10a_g <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$cnt_flag==0,])
+
+
+
+glmMatched10b_g <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched2c_g <- glm(formula = cost_per_er ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$cnt_flag==0,])
+
+glmMatched3c_g <- glm(formula = cost_per_hosp ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$cnt_flag==0,])
+
+glmMatched4c_g <- glm(formula = cost_per_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$cnt_flag==0,])
+
+glmMatched5c_g <- glm(formula = cost_per_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched5ca_g <- glm(formula = cost_per_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$cnt_flag==0,])
+
+
+glmMatched5cb_g <- glm(formula = cost_per_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$cnt_flag==0,])
+
+```
+
+#Subgroup table results 
+```{r coef}
+
+exponentiate <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1_g, glmMatched2_g, glmMatched3_g, glmMatched4_g, glmMatched5_g, glmMatched5a_g, glmMatched5b_g, glmMatched6_g,
+                     title="Spend Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx"))
+
+stargazer::stargazer(glmMatched7_g, glmMatched8_g, glmMatched9_g, glmMatched10_g, glmMatched10a_g, glmMatched10b_g,
+                     title="Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+stargazer::stargazer(glmMatched2c_g, glmMatched3c_g, glmMatched4c_g, glmMatched5c_g, glmMatched5ca_g, glmMatched5cb_g, 
+                     title="Cost per Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+
+```
+
+```{r hte}
+
+glmMatched1_g <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+glmMatched2_g <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+glmMatched3_g <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+glmMatched4_g <- glm(formula = logcost_pcp ~om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+glmMatched5_g <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched5a_g <- glm(formula = logcost_mh ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched5b_g <- glm(formula = logcost_pt ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched6_g <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched7_g <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched8_g <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched9_g <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==1,])
+
+glmMatched10_g <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==1,])
+
+
+
+glmMatched10a_g <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$vrt_flag==1,])
+
+
+
+glmMatched10b_g <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched2c_g <- glm(formula = cost_per_er ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==1,])
+
+glmMatched3c_g <- glm(formula = cost_per_hosp ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==1,])
+
+glmMatched4c_g <- glm(formula = cost_per_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==1,])
+
+glmMatched5c_g <- glm(formula = cost_per_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched5ca_g <- glm(formula = cost_per_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$vrt_flag==1,])
+
+
+glmMatched5cb_g <- glm(formula = cost_per_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$vrt_flag==1,])
+
+```
+
+#Subgroup table results 
+```{r coef}
+
+exponentiate <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1_g, glmMatched2_g, glmMatched3_g, glmMatched4_g, glmMatched5_g, glmMatched5a_g, glmMatched5b_g, glmMatched6_g,
+                     title="Spend Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx"))
+
+stargazer::stargazer(glmMatched7_g, glmMatched8_g, glmMatched9_g, glmMatched10_g, glmMatched10a_g, glmMatched10b_g,
+                     title="Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+stargazer::stargazer(glmMatched2c_g, glmMatched3c_g, glmMatched4c_g, glmMatched5c_g, glmMatched5ca_g, glmMatched5cb_g, 
+                     title="Cost per Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+
+```
+
+```{r hte}
+
+glmMatched1_g <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+glmMatched2_g <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+glmMatched3_g <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+glmMatched4_g <- glm(formula = logcost_pcp ~om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+glmMatched5_g <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched5a_g <- glm(formula = logcost_mh ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched5b_g <- glm(formula = logcost_pt ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched6_g <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched7_g <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched8_g <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched9_g <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run[dta_run$vrt_flag==0,])
+
+glmMatched10_g <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==0,])
+
+
+
+glmMatched10a_g <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$vrt_flag==0,])
+
+
+
+glmMatched10b_g <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched2c_g <- glm(formula = cost_per_er ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==0,])
+
+glmMatched3c_g <- glm(formula = cost_per_hosp ~om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==0,])
+
+glmMatched4c_g <- glm(formula = cost_per_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==0,])
+
+glmMatched5c_g <- glm(formula = cost_per_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                      data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched5ca_g <- glm(formula = cost_per_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$vrt_flag==0,])
+
+
+glmMatched5cb_g <- glm(formula = cost_per_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                       data    = dta_run[dta_run$vrt_flag==0,])
+
+```
+
+#Subgroup table results 
+```{r coef}
+
+exponentiate <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1_g, glmMatched2_g, glmMatched3_g, glmMatched4_g, glmMatched5_g, glmMatched5a_g, glmMatched5b_g, glmMatched6_g,
+                     title="Spend Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx"))
+
+stargazer::stargazer(glmMatched7_g, glmMatched8_g, glmMatched9_g, glmMatched10_g, glmMatched10a_g, glmMatched10b_g,
+                     title="Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+stargazer::stargazer(glmMatched2c_g, glmMatched3c_g, glmMatched4c_g, glmMatched5c_g, glmMatched5ca_g, glmMatched5cb_g, 
+                     title="Cost per Utilization Results", single.row=TRUE,
+                     type = "html",
+                     keep=c("om_flag"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy"))
+
+
 ```
