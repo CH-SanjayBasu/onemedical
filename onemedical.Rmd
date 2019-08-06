@@ -1,10 +1,10 @@
 ---
 title: "One Medical"
 author: "Sanjay Basu"
-date: "7/26/2019"
+date: "8/6/2019"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
   word_document: default
 ---
 
@@ -20,6 +20,7 @@ knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, message = FALS
 # install.packages('tableone', repos = "http://cran.us.r-project.org")
 # install.packages('MatchIt', repos = "http://cran.us.r-project.org")
 # install.packages('devtools', repos = "http://cran.us.r-project.org")
+# install.packages('stargazer', repos = "http://cran.us.r-project.org")
 # devtools::install_github("healthactuary/cmshcc")
 library(tidyverse)
 library(lubridate)
@@ -29,6 +30,7 @@ library(tableone)
 library(tools)
 library(MatchIt)
 library(cmshcc)
+library(stargazer)
 ```
 
 ##Import datasets
@@ -65,7 +67,6 @@ clm_dol$`Metaclaims Analytics Medical Last Name` = str_to_title(clm_dol$`Metacla
 
 clm_sub = clm_dol %>%
   mutate(personid = (`Metaclaims Analytics Medical Person ID`),
-         age = round(interval(ymd(`Metaclaims Analytics Medical Date of Birth Date`), ymd(`Metaclaims Analytics Medical Service Date Start Ch Date`))/years(1),0),
          female = (`Metaclaims Analytics Medical Gender`=="F"),
          firstname = `Metaclaims Analytics Medical First Name`,
          lastname = `Metaclaims Analytics Medical Last Name`,
@@ -98,16 +99,13 @@ clm_sub = clm_dol %>%
                     (`Metaclaims Analytics Medical Procedure Code`=='99213')|
                     (`Metaclaims Analytics Medical Procedure Code`=='99214')|
                     (`Metaclaims Analytics Medical Procedure Code`=='99215'))) %>%
-  group_by(firstname,lastname,age,female,pos,dos) %>%
-  summarise(om_flag = max(om_flag),
-            em_flag = max(em_flag),
-            em_flag = as.logical(em_flag),
+  group_by(firstname,lastname,female,pos) %>%
+  summarise(om_flag = as.logical(getmode(om_flag)),
+            em_flag = as.logical(getmode(em_flag)),
             diag1 = getmode(`Metaclaims Analytics Medical Principal Diag`),
             cost_md = sum(`Metaclaims Analytics Medical Paid Amount Ch`),
-         cnt_flag = 0) %>%
-  select(firstname,lastname,age,female,dos,em_flag,om_flag,diag1,pos,cost_md) %>%
+            cnt_flag = 0) %>%
   ungroup() 
-clm_sub$age[clm_sub$age<0] = 0
 
 ctr_sub = ctr
 ctr_sub$Name = str_to_title(ctr$Name)
@@ -117,10 +115,9 @@ ctr_sub$`Primary Diagnosis` = as.character(gsub("[\\.]", "", ctr_sub$`Primary Di
 ctr_sub = ctr_sub %>%
   separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
   mutate(dos = mdy(DOS)) %>%
-  group_by(firstname,lastname,dos)%>%
-  mutate(age = mean(Age),
-         female= getmode((Gender=='F')),
-         om_flag = 1,
+  group_by(firstname,lastname,Gender,Billing)%>%
+  mutate(female= getmode((Gender=='F')),
+         om_flag = as.logical(1),
          em_flag = ((CPT=='99201')|
                     (CPT=='99202')|
                     (CPT=='99203')|
@@ -137,12 +134,11 @@ ctr_sub = ctr_sub %>%
                       (Billing=='GFRANK[109571370]')),
          diag1 = getmode(`Primary Diagnosis`),
          pos = ("Office Visits - PCP"))  %>%  
-  select(firstname,lastname,dos,age,female,em_flag,om_flag,diag1,pos,CPT,pt_flag,mh_flag) %>%
-  distinct()
-  
-ctr_sub$pos[ctr_sub$mh_flag==1] =  "Mental Health and Substance Use" 
-ctr_sub$pos[ctr_sub$pt_flag==1] = "Physical Medicine" 
+  select(firstname,lastname,female,em_flag,om_flag,diag1,pos,CPT,pt_flag,mh_flag) %>%
+  ungroup() 
 
+ctr_sub$pos[ctr_sub$mh_flag==1] = "Mental Health and Substance Use" 
+ctr_sub$pos[ctr_sub$pt_flag==1] = "Physical Medicine" 
 
 
 feesch_sub = feesch %>%
@@ -183,8 +179,9 @@ clm_tot = clm_tot %>%
             cost_pt = sum(cost_md[pos=="Physical Medicine"]),
             cnt_flag = max(cnt_flag)) %>%   
   select(firstname,lastname, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,count_mh,cost_mh,count_pt,cost_pt,cnt_flag) %>%
-  distinct()
+  ungroup()
 clm_tot$female[is.na(clm_tot$female)==1]=0
+
 
 ```
 
@@ -221,14 +218,12 @@ rx_dol$`Analytics Claims Pharmacy Last Name` = str_to_title(rx_dol$`Analytics Cl
 rx_sub = rx_dol %>%
   mutate(personid = `Analytics Claims Pharmacy Person ID`) %>%
   group_by(personid) %>%
-  mutate(age = round(interval(ymd(`Analytics Claims Pharmacy Date of Birth Date`), ymd(`Analytics Claims Pharmacy Service Date Start Date`))/years(1),0),
-         female = (`Analytics Claims Pharmacy Gender`=="F"),
+  mutate(female = (`Analytics Claims Pharmacy Gender`=="F"),
          firstname = `Analytics Claims Pharmacy First Name`,
          lastname = `Analytics Claims Pharmacy Last Name`,
          cost_rx = sum(`Analytics Claims Pharmacy Paid Amount`)) %>%
-  select(age, female, personid, firstname,lastname,cost_rx) %>%
+  select(female, personid, firstname,lastname,cost_rx) %>%
   distinct()
-rx_sub$age[rx_sub$age<0] = 0
 ```
 
 
@@ -255,7 +250,7 @@ vrt_sub = vrt_sub %>%
 
 spacex_dat = mbr_sub %>% 
   full_join(clm_tot, by = c("firstname","lastname","female")) %>%
-  full_join(rx_sub, by = c("firstname","lastname")) %>%
+  full_join(rx_sub, by = c("firstname","lastname","female")) %>%
   full_join(vrt_sub, by = c("firstname","lastname")) %>%
   mutate(om_flag = replace_na(om_flag,0),
          vrt_flag = replace_na(vrt_flag,0),
@@ -265,7 +260,7 @@ spacex_dat = mbr_sub %>%
 PERSON = spacex_dat %>%
   ungroup() %>%
   mutate(HICNO = personid.x,
-         SEX = if_else(female.x==1,"F","M"),
+         SEX = if_else(female==1,"F","M"),
          DOB = DOB,
          MCAID = 0,
          NMCAID = 0,
@@ -285,64 +280,30 @@ DIAG = spacex_dat %>%
 hcc = evaluate_v22_2017(PERSON, DIAG, "Community_NonDual_Aged")
 
 
-spacex_dat = mbr_sub %>% 
-  full_join(clm_tot, by = c("firstname","lastname","female")) %>%
-  full_join(rx_sub, by = c("firstname","lastname","female")) %>%
-  full_join(vrt_sub, by = c("firstname","lastname")) %>%
-  full_join(hcc, by = c("personid.x" = "HICNO")) %>%
-  mutate(om_flag = replace_na(om_flag,0),
-         vrt_flag = replace_na(vrt_flag,0),
-         cnt_flag = replace_na(cnt_flag,0),
-         hcc = Community_NonDual_Aged) %>%
-  distinct()
+```
+
+## CCS cat
+
+```{r ccs}
+ccs <- read_csv("ccs_dx_icd10cm_2018_1.csv")
+ccs  =ccs %>%
+  mutate(diag1 = `ICD-10-CM CODE`,
+         ccs = `CCS CATEGORY`) %>%
+  select(diag1, ccs)
 
 ```
 
-##Pre-match outcome metrics
-
-```{r outcomes}
-
-spacex_dat %>%
-  ungroup() %>%
-  group_by(om_flag) %>%
-  summarise(age = mean(age.x, na.rm=TRUE),
-            female = mean(female, na.rm=TRUE),
-            pmpm_medprx = (sum(cost_md, na.rm=TRUE)+sum(cost_rx, na.rm=TRUE))/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000, 
-        pmpm_er = sum(cost_er, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        pmpm_hosp = sum(cost_hosp, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        pmpm_pcp = sum(cost_pcp, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        pmpm_spec = sum(cost_spec, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        pmpm_mh = sum(cost_mh, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        pmpm_pt = sum(cost_pt, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        util_er = sum(count_er, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        util_hosp = sum(count_hosp, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        util_pcp = sum(count_pcp, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        util_spec = sum(count_spec, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        util_mh = sum(count_mh, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-        util_pt = sum(count_pt, na.rm=TRUE)/dim(mbr_sub)[1]/sum(membermo, na.rm=TRUE)*1000,
-         cost_per_er = sum(cost_er[cost_er>0], na.rm=TRUE)/sum(count_er[cost_er>0], na.rm=TRUE),
-         cost_per_hosp = sum(cost_hosp[cost_hosp>0], na.rm=TRUE)/sum(count_hosp[cost_hosp>0], na.rm=TRUE),
-         cost_per_pcp = sum(cost_pcp[cost_pcp>0], na.rm=TRUE)/sum(count_pcp[cost_pcp>0], na.rm=TRUE),
-         cost_per_spec = sum(cost_spec[cost_spec>0], na.rm=TRUE)/sum(count_spec[cost_spec>0], na.rm=TRUE),
-         cost_per_pt = sum(cost_pt[cost_pt>0], na.rm=TRUE)/sum(count_pt[cost_pt>0], na.rm=TRUE),
-         cost_per_mh = sum(cost_mh[cost_mh>0], na.rm=TRUE)/sum(count_mh[cost_mh>0], na.rm=TRUE),
-        vrt_flag = mean(vrt_flag,na.rm=T),
-        cnt_flag = mean(cnt_flag,na.rm=T),
-        hcc = mean(hcc,na.rm=T))
-
-
-```
-
-##Replace NAs
+##Pre-match
 
 ```{r na}
 
-spacex_dat = mbr_sub %>%
+spacex_dat_ana = mbr_sub %>% 
   full_join(clm_tot, by = c("firstname","lastname","female")) %>%
   full_join(rx_sub, by = c("firstname","lastname","female")) %>%
   full_join(vrt_sub, by = c("firstname","lastname")) %>%
   full_join(hcc, by = c("personid.x" = "HICNO")) %>%
-  mutate(age = age.x,
+  left_join(ccs, c("diag1")) %>%
+  mutate(age = mean(age),
          om_flag = replace_na(om_flag,0),
          vrt_flag = replace_na(vrt_flag,0),
          cnt_flag = replace_na(cnt_flag,0),
@@ -362,48 +323,63 @@ spacex_dat = mbr_sub %>%
          cost_rx = replace_na(cost_rx,0),
          hcc = Community_NonDual_Aged,
          hcc = replace_na(hcc,0)) %>%
-  select(age, female, membermo, hcc, om_flag,diag1,cost_md,count_er,cost_er,count_hosp,count_mh,count_pt,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,cost_rx,cost_mh,cost_pt,cnt_flag,vrt_flag) %>%
-  distinct()
+  ungroup() %>%
+  group_by(personid.x) %>%
+  filter(membermo>0) %>%
+  summarise(mm = mean(membermo,na.rm=T),
+            age = mean(age, na.rm=TRUE),
+            age = replace_na(age,0),
+            female = mean(female, na.rm=TRUE),
+            female = replace_na(female,0),
+            cost_tot = (sum(cost_md, na.rm=TRUE)+sum(cost_rx, na.rm=TRUE))/mm, 
+            cost_md = sum(cost_md, na.rm=TRUE)/mm, 
+            cost_rx = sum(cost_rx, na.rm=TRUE)/mm, 
+            cost_er = sum(cost_er, na.rm=TRUE)/mm,
+            cost_hosp = sum(cost_hosp, na.rm=TRUE)/mm,
+            cost_pcp = sum(cost_pcp, na.rm=TRUE)/mm,
+            cost_spec = sum(cost_spec, na.rm=TRUE)/mm,
+            cost_mh = sum(cost_mh, na.rm=TRUE)/mm,
+            cost_pt = sum(cost_pt, na.rm=TRUE)/mm,
+            count_er = sum(count_er, na.rm=TRUE)/mm,
+            count_hosp = sum(count_hosp, na.rm=TRUE)/mm,
+            count_pcp = sum(count_pcp, na.rm=TRUE)/mm,
+            count_spec = sum(count_spec, na.rm=TRUE)/mm,
+            count_mh = sum(count_mh, na.rm=TRUE)/mm,
+            count_pt = sum(count_pt, na.rm=TRUE)/mm,
+            vrt_flag = mean(vrt_flag,na.rm=T),
+            cnt_flag = mean(cnt_flag,na.rm=T),
+            om_flag = mean(om_flag, na.rm=T),
+            hcc = mean(hcc,na.rm=T),
+            ccs = mean(ccs,na.rm=T),
+            hcc = replace_na(hcc,0),
+            ccs = replace_na(ccs,0),
+            ccs = as.factor(ccs),
+            diag1 = getmode(`diag1`),
+            diag1 = replace_na(diag1,0)) 
+  
 
-summary(spacex_dat)
 
-save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
+summary(spacex_dat_ana)
 
-```
-
-## CCS cat
-
-```{r ccs}
-ccs <- read_csv("ccs_dx_icd10cm_2018_1.csv")
-ccs  =ccs %>%
-  mutate(diag1 = `ICD-10-CM CODE`,
-         ccs = `CCS CATEGORY`) %>%
-  select(diag1, ccs)
-spacex_dat = spacex_dat %>%
-  left_join(ccs, c("diag1"))
-save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
 
 ```
 
 ##Matching
 
 ```{r matching}
-spacex_dat_cov <- c('age', 'female', 'diag1', 'membermo', 'hcc', 'ccs')
+spacex_dat_cov <- c('age', 'female', 'mm', 'membermo', 'hcc', 'ccs', 'diag1')
 
-spacex_dat_nomiss <- spacex_dat %>%  
-  select(cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,cost_rx,count_mh,cost_mh,count_pt,cost_pt,om_flag,cnt_flag,vrt_flag, one_of(spacex_dat_cov)) %>%
-  na.omit()
-
-spacex_dat_nomiss = as.data.frame(spacex_dat_nomiss)
+spacex_dat_nomiss = as.data.frame(spacex_dat_ana)
 
 start_time <- Sys.time()
 
 spacex_dat_nomiss = spacex_dat_nomiss %>% 
-  mutate(agecat = 1*(age<4) + 2*(age>=4)*(age<11) + 3*(age>=11)*(age<22)+4*(age>=22)*(age<26)+5*(age>=26)*(age<29)+6*(age>=29)*(age<31)+7*(age>=31)*(age<35)+8*(age>=35)*(age<39)+9*(age>=39)*(age<48)+10*(age>=48)*(age<77)+11*(age>=77),
+  mutate(agecat = 1*(age<4) + 2*(age>=4)*(age<11) + 3*(age>=11)*(age<21)+4*(age>=21)*(age<25)+5*(age>=25)*(age<28)+6*(age>=28)*(age<30)+7*(age>=30)*(age<34)+8*(age>=34)*(age<38)+9*(age>=38)*(age<48)+10*(age>=48)*(age<79)+11*(age>=79),
          hcccat = 1*(hcc==0) + 2*(hcc>0)&(hcc<1) + 3*(hcc>=1),
-         mmcat = 1*(membermo<39) + 2*(membermo>=39 & membermo<48) + 3*(membermo>=48))
+         mmcat = 1*(mm<39) + 2*(mm>=39 & mm<48) + 3*(mm>=48))
 
-mod_match <- matchit(om_flag ~ agecat + female + ccs + hcccat + mmcat,
+set.seed(100)
+mod_match <- matchit(om_flag ~ age + female + ccs + hcccat + mm,
                      method = "nearest", data = spacex_dat_nomiss)
 end_time <- Sys.time()
 
@@ -411,13 +387,6 @@ end_time - start_time
 
 mod_match
 
-save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
-
-```
-
-#Assessments of the covariance balance in the matched sample 
-
-```{r assess}
 dta_m <- match.data(mod_match)
 dim(dta_m)
 
@@ -426,220 +395,158 @@ dta_m %>%
   select(one_of(spacex_dat_cov)) %>%
   summarise_all(funs(mean))
 
-print(CreateTableOne(vars = c("agecat", "female", "ccs", "hcccat", "mmcat"), strata = "om_flag", data = dta_m, test = T), smd = TRUE)
-print(CreateTableOne(vars = c("age", "female", "ccs", "hcc", "membermo"), strata = "om_flag", data = dta_m, test = T), smd = TRUE)
+# continuous
+print(CreateTableOne(vars = c("age", "female", "hcc", "mm", "ccs"), strata = "om_flag", data = dta_m, test = T), smd = TRUE)
+
+```
+
+#Outcome metrics
+```{r outcomes}
+dta_run = dta_m %>%
+  mutate(logcost_md = log(cost_md+1),
+         logcost_er = log(cost_er+1),
+         logcost_hosp = log(cost_hosp+1),
+         logcost_pcp = log(cost_pcp+1),
+         logcost_spec = log(cost_spec+1),
+         logcost_mh = log(cost_mh+1),
+         logcost_pt = log(cost_pt+1),
+         logcost_rx = log(cost_rx+1),
+        logcount_er = log(count_er+1),
+        logcount_hosp = log(count_hosp+1),
+        logcount_pcp = log(count_pcp+1),
+        logcount_spec = log(count_spec+1),
+        logcount_mh = log(count_mh+1),
+        logcount_pt = log(count_pt+1),
+        cost_per_er = (cost_er+1)/(count_er+1),
+        cost_per_hosp = (cost_hosp+1)/(count_hosp+1),
+        cost_per_pcp = (cost_pcp+1)/(count_pcp+1),
+        cost_per_spec = (cost_spec+1)/(count_spec+1),
+        cost_per_mh = (cost_mh+1)/(count_mh+1),
+        cost_per_pt = (cost_pt+1)/(count_pt+1))
+```
+
+```{r table 1}
+# pre-match
+print(CreateTableOne(data =spacex_dat_ana, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "vrt_flag" ,"cnt_flag"), strata="om_flag", test = T), smd = TRUE)
+
+# post-match
+print(CreateTableOne(data =dta_m, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "vrt_flag" ,"cnt_flag"), strata="om_flag", test = T), smd = TRUE)
+
+
 
 ```
 
 #Treatment effect 
 
 ```{r ate}
-glmMatched1 <- glm(formula = cost_md ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m)
-summary(glmMatched1)
 
-glmMatched2 <- glm(formula = cost_er ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m)
-summary(glmMatched2)
+glmMatched1 <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
 
-glmMatched3 <- glm(formula = cost_hosp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m)
-summary(glmMatched3)
+glmMatched2 <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
 
-glmMatched4 <- glm(formula = cost_pcp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m)
-summary(glmMatched4)
+glmMatched3 <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
 
-glmMatched5 <- glm(formula = cost_spec ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m)
-summary(glmMatched5)
+glmMatched4 <- glm(formula = logcost_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
+
+glmMatched5 <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
 
 
-glmMatched5a <- glm(formula = cost_mh ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                    data    = dta_m)
-summary(glmMatched5a)
+glmMatched5a <- glm(formula = logcost_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run)
 
 
-glmMatched5b <- glm(formula = cost_pt ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                    data    = dta_m)
-summary(glmMatched5b)
+glmMatched5b <- glm(formula = logcost_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run)
 
 
-glmMatched6 <- glm(formula = cost_rx ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m)
-summary(glmMatched6)
+glmMatched6 <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
 
 
-glmMatched7 <- glm(formula = count_er ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m,
-                   family = poisson())
-
-summary(glmMatched7)
-
-glmMatched8 <- glm(formula = count_hosp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m,
-                   family = poisson())
-
-summary(glmMatched8)
-
-glmMatched9 <- glm(formula = count_pcp ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                   data    = dta_m,
-                   family = poisson())
-summary(glmMatched9)
-
-glmMatched10 <- glm(formula = count_spec ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                    data    = dta_m,
-                    family = poisson())
-
-summary(glmMatched10)
+glmMatched7 <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
 
 
-glmMatched10a <- glm(formula = count_mh ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m,
-                     family = poisson())
-
-summary(glmMatched10a)
+glmMatched8 <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
 
 
-glmMatched10b <- glm(formula = count_pt ~ om_flag + age + female + factor(ccs) + membermo + hcc,
-                     data    = dta_m,
-                     family = poisson())
+glmMatched9 <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
 
-summary(glmMatched10b)
+glmMatched10 <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run)
+
+
+
+glmMatched10a <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run)
+
+
+
+glmMatched10b <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = dta_run)
+
+
+glmMatched2c <- glm(formula = cost_per_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
+
+glmMatched3c <- glm(formula = cost_per_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
+
+glmMatched4c <- glm(formula = cost_per_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
+
+glmMatched5c <- glm(formula = cost_per_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = dta_run)
+
+
+glmMatched5ca <- glm(formula = cost_per_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run)
+
+
+glmMatched5cb <- glm(formula = cost_per_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = dta_run)
+
 ```
 
-##Per member per month results
-
-coefficient
-95% low
-95% high
-P value
-
-```{r results}
-
-# uncontrolled differences without/with OM
-print("summary stats for non-OM")
-summary(dta_m[dta_m$om_flag==0,])
-print("summary stats for OM")
-summary(dta_m[dta_m$om_flag==1,])
-print("total cost among non-OM utilizers, PMPM")
-summary(dta_m$cost_md[(dta_m$om_flag==0)&(dta_m$cost_md>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_md>0)]))
-print("total cost among OM utilizers, PMPM")
-summary(dta_m$cost_md[(dta_m$om_flag==1)&(dta_m$cost_md>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_md>0)]))
-print("ER cost among non-OM utilizers, PMPM")
-summary(dta_m$cost_er[(dta_m$om_flag==0)&(dta_m$cost_er>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_er>0)]))
-print("ER cost among OM utilizers, PMPM")
-summary(dta_m$cost_er[(dta_m$om_flag==1)&(dta_m$cost_er>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_er>0)]))
-print("hosp cost among non-OM utilizers, PMPM")
-summary(dta_m$cost_hosp[(dta_m$om_flag==0)&(dta_m$cost_hosp>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_hosp>0)]))
-print("hosp cost among OM utilizers, PMPM")
-summary(dta_m$cost_hosp[(dta_m$om_flag==1)&(dta_m$cost_hosp>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_hosp>0)]))
-print("PCP cost among non-OM utilizers, PMPM")
-summary(dta_m$cost_pcp[(dta_m$om_flag==0)&(dta_m$cost_pcp>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_pcp>0)]))
-print("PCP cost among OM utilizers, PMPM")
-summary(dta_m$cost_pcp[(dta_m$om_flag==1)&(dta_m$cost_pcp>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_pcp>0)]))
-print("spec cost among non-OM utilizers, PMPM")
-summary(dta_m$cost_spec[(dta_m$om_flag==0)&(dta_m$cost_spec>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_spec>0)]))
-print("spec cost among OM utilizers, PMPM")
-summary(dta_m$cost_spec[(dta_m$om_flag==1)&(dta_m$cost_spec>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_spec>0)]))
-print("mh cost among non-OM utilizers, PMPM")
-summary(dta_m$cost_mh[(dta_m$om_flag==0)&(dta_m$cost_mh>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_mh>0)]))
-print("mh cost among OM utilizers, PMPM")
-summary(dta_m$cost_mh[(dta_m$om_flag==1)&(dta_m$cost_mh>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_mh>0)]))
-print("pt cost among non-OM utilizers, PMPM")
-summary(dta_m$cost_pt[(dta_m$om_flag==0)&(dta_m$cost_pt>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_pt>0)]))
-print("pt cost among OM utilizers, PMPM")
-summary(dta_m$cost_pt[(dta_m$om_flag==1)&(dta_m$cost_pt>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_pt>0)]))
-print("Rx cost among non-OM utilizers, PMPM")
-summary(dta_m$cost_rx[(dta_m$om_flag==0)&(dta_m$cost_rx>0)]/mean(dta_m$membermo[(dta_m$om_flag==0)&(dta_m$cost_rx>0)]))
-print("Rx cost among OM utilizers, PMPM")
-summary(dta_m$cost_rx[(dta_m$om_flag==1)&(dta_m$cost_rx>0)]/mean(dta_m$membermo[(dta_m$om_flag==1)&(dta_m$cost_rx>0)]))
+##Results as percentage change in each outcome
 
 
-print("delta total cost per person per month")
-print((glmMatched1$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched1$coefficients)[2]-1.96*coef(summary(glmMatched1))[2,2])/mean(dta_m$membermo))
-print(((glmMatched1$coefficients)[2]+1.96*coef(summary(glmMatched1))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched1))[2,4])
+```{r coef}
 
-print("delta ER cost per person per month")
-print((glmMatched2$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched2$coefficients)[2]-1.96*coef(summary(glmMatched2))[2,2])/mean(dta_m$membermo))
-print(((glmMatched2$coefficients)[2]+1.96*coef(summary(glmMatched2))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched2))[2,4])
+exponentiate <- function(x) ((exp(x)-1)*100)
 
-print("delta hosp cost per person per month")
-print((glmMatched3$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched3$coefficients)[2]-1.96*coef(summary(glmMatched3))[2,2])/mean(dta_m$membermo))
-print(((glmMatched3$coefficients)[2]+1.96*coef(summary(glmMatched3))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched3))[2,4])
+stargazer::stargazer(glmMatched1, glmMatched2, glmMatched3, glmMatched4, glmMatched5, glmMatched5a, glmMatched5b, glmMatched6,
+          title="Spend Results", single.row=TRUE,
+          type = "text",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,
+          digits = 1)
 
-print("delta PCP cost per person per month")
-print((glmMatched4$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched4$coefficients)[2]-1.96*coef(summary(glmMatched4))[2,2])/mean(dta_m$membermo))
-print(((glmMatched4$coefficients)[2]+1.96*coef(summary(glmMatched4))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched4))[2,4])
+stargazer::stargazer(glmMatched7, glmMatched8, glmMatched9, glmMatched10, glmMatched10a, glmMatched10b,
+          title="Utilization Results", single.row=TRUE,
+          type = "text",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,
+          digits = 1)
 
-print("delta spec cost per person per month")
-print((glmMatched5$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched5$coefficients)[2]-1.96*coef(summary(glmMatched5))[2,2])/mean(dta_m$membermo))
-print(((glmMatched5$coefficients)[2]+1.96*coef(summary(glmMatched5))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched5))[2,4])
-
-print("delta mh cost per person per month")
-print((glmMatched5a$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched5a$coefficients)[2]-1.96*coef(summary(glmMatched5a))[2,2])/mean(dta_m$membermo))
-print(((glmMatched5a$coefficients)[2]+1.96*coef(summary(glmMatched5a))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched5a))[2,4])
-
-print("delta pt cost per person per month")
-print((glmMatched5b$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched5b$coefficients)[2]-1.96*coef(summary(glmMatched5b))[2,2])/mean(dta_m$membermo))
-print(((glmMatched5b$coefficients)[2]+1.96*coef(summary(glmMatched5b))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched5b))[2,4])
-
-print("delta Rx cost per person per month")
-print((glmMatched6$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched6$coefficients)[2]-1.96*coef(summary(glmMatched6))[2,2])/mean(dta_m$membermo))
-print(((glmMatched6$coefficients)[2]+1.96*coef(summary(glmMatched6))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched6))[2,4])
-
-print("delta ER count per person per month")
-print((glmMatched7$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched7$coefficients)[2]-1.96*coef(summary(glmMatched7))[2,2])/mean(dta_m$membermo))
-print(((glmMatched7$coefficients)[2]+1.96*coef(summary(glmMatched7))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched7))[2,4])
-
-print("delta hosp count per person per month")
-print((glmMatched8$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched8$coefficients)[2]-1.96*coef(summary(glmMatched8))[2,2])/mean(dta_m$membermo))
-print(((glmMatched8$coefficients)[2]+1.96*coef(summary(glmMatched8))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched8))[2,4])
-
-print("delta PCP count per person per month")
-print((glmMatched9$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched9$coefficients)[2]-1.96*coef(summary(glmMatched9))[2,2])/mean(dta_m$membermo))
-print(((glmMatched9$coefficients)[2]+1.96*coef(summary(glmMatched9))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched9))[2,4])
-
-print("delta spec count per person per month")
-print((glmMatched10$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched10$coefficients)[2]-1.96*coef(summary(glmMatched10))[2,2])/mean(dta_m$membermo))
-print(((glmMatched10$coefficients)[2]+1.96*coef(summary(glmMatched10))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched10))[2,4])
-
-print("delta mh count per person per month")
-print((glmMatched10a$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched10a$coefficients)[2]-1.96*coef(summary(glmMatched10a))[2,2])/mean(dta_m$membermo))
-print(((glmMatched10a$coefficients)[2]+1.96*coef(summary(glmMatched10a))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched10a))[2,4])
-
-print("delta pt count per person per month")
-print((glmMatched10b$coefficients)[2]/mean(dta_m$membermo))
-print(((glmMatched10b$coefficients)[2]-1.96*coef(summary(glmMatched10b))[2,2])/mean(dta_m$membermo))
-print(((glmMatched10b$coefficients)[2]+1.96*coef(summary(glmMatched10b))[2,2])/mean(dta_m$membermo))
-print(coef(summary(glmMatched10b))[2,4])
+stargazer::stargazer(glmMatched2c, glmMatched3c, glmMatched4c, glmMatched5c, glmMatched5ca, glmMatched5cb, 
+          title="Cost per Utilization Results", single.row=TRUE,
+          type = "text",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,
+          digits = 1)
 
 save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
+
 
 ```
