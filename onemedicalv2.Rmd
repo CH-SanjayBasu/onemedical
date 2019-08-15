@@ -1,11 +1,11 @@
 ---
 title: "One Medical"
 author: "Sanjay Basu"
-date: "8/6/2019"
+date: "8/15/2019"
 output:
+  html_document: default
   word_document: default
   pdf_document: default
-  html_document: default
 ---
 
 ##Import dependencies/packages
@@ -21,6 +21,7 @@ knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, message = FALS
 # install.packages('MatchIt', repos = "http://cran.us.r-project.org")
 # install.packages('devtools', repos = "http://cran.us.r-project.org")
 # install.packages('stargazer', repos = "http://cran.us.r-project.org")
+# install.packages('EValue', repos = "http://cran.us.r-project.org")
 # devtools::install_github("healthactuary/cmshcc")
 library(tidyverse)
 library(lubridate)
@@ -31,6 +32,7 @@ library(tools)
 library(MatchIt)
 library(cmshcc)
 library(stargazer)
+library(EValue)
 ```
 
 ##Import datasets
@@ -283,12 +285,44 @@ PERSON = spacex_dat %>%
 
 cmshcc_map <- load_cmshcc_map()
 
-DIAG = spacex_dat %>%
-  ungroup() %>%
-  mutate(HICNO = personid.x,
-         DX = diag1) %>%
-  select(HICNO, DX) %>% 
-  filter(!is.na(HICNO))
+clm <- read_csv("spacex_claims.csv")
+
+clm_hcc  = clm %>%
+  mutate(HICNO = (`Metaclaims Analytics Medical Person ID`),
+         diag1 = `Metaclaims Analytics Medical Principal Diag`,
+         diag2 = `Metaclaims Analytics Medical Diag02`,
+         diag3 = `Metaclaims Analytics Medical Diag03`,
+         diag4 = `Metaclaims Analytics Medical Diag04`,
+         diag5 = `Metaclaims Analytics Medical Diag05`,
+         diag6 = `Metaclaims Analytics Medical Diag06`,
+         diag7 = `Metaclaims Analytics Medical Diag07`,
+         diag8 = `Metaclaims Analytics Medical Diag08`,
+         diag9 = `Metaclaims Analytics Medical Diag09`,
+         diag10 = `Metaclaims Analytics Medical Diag10`) %>%
+  gather(Diag, DX, diag1:diag10, factor_key=T) %>%
+  select(HICNO,DX) %>%
+  arrange(HICNO)  %>% 
+  filter(!is.na(HICNO), !is.na(DX)) %>%
+  distinct()
+
+ctr_hcc = ctr
+ctr_hcc$Name = str_to_title(ctr$Name)
+ctr_hcc$Name = toTitleCase(ctr$Name)
+
+ctr_hcc = ctr_hcc %>%
+  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
+  mutate(female= getmode((Gender=='F'))) %>%
+  separate(`All Diagnosis`, into=c("diag1","diag2","diag3","diag4","diag5","diag6","diag7","diag8","diag9","diag10"), sep = ", ", extra = "drop", warn = "left") %>%
+  full_join(mbr_sub, by = c("firstname","lastname","female"))  %>%
+  select(personid, diag1, diag2, diag3, diag4, diag5, diag6, diag7, diag8, diag9, diag10)  %>%
+  mutate(HICNO= personid) %>%
+  gather(Diag, DX, diag1:diag10, factor_key=T) %>%
+  select(HICNO,DX) %>%
+  arrange(HICNO)  %>% 
+  filter(!is.na(HICNO), !is.na(DX)) %>%
+  distinct()
+
+DIAG = bind_rows(clm_hcc, ctr_hcc)
 
 hcc = evaluate_v22_2017(PERSON, DIAG, "Community_NonDual_Aged")
 
@@ -404,12 +438,9 @@ spacex_dat_nomiss = as.data.frame(spacex_dat_ana)
 
 start_time <- Sys.time()
 
-spacex_dat_nomiss = spacex_dat_nomiss %>% 
-  mutate(hcccat = 1*(hcc==0) + 2*(hcc>0)&(hcc<1) + 3*(hcc>=1))
-
-set.seed(100)
-mod_match <- matchit(om_flag ~ age + female + ccs + hcccat + mm,
-                     method = "nearest", data = spacex_dat_nomiss)
+set.seed(1)
+mod_match <- matchit(om_flag ~ age + female + ccs + hcc + mm,
+                     method = "nearest", data = spacex_dat_nomiss, caliper = .10)
 end_time <- Sys.time()
 
 end_time - start_time
@@ -424,7 +455,6 @@ dta_m %>%
   select(one_of(spacex_dat_cov)) %>%
   summarise_all(funs(mean))
 
-# continuous
 print(CreateTableOne(vars = c("age", "female", "hcc", "mm", "ccs"), strata = "om_flag", data = dta_m, test = T), smd = TRUE, noSpaces = TRUE)
 
 ```
@@ -643,7 +673,7 @@ exponentiate <- function(x) ((exp(x)-1)*100)
 stargazer::stargazer(glmMatched1, glmMatched2, glmMatched3, glmMatched4, glmMatched5, glmMatched5a, glmMatched5b, glmMatched6,glmMatched6a,glmMatched6b,glmMatched6c,glmMatched6d,glmMatched6e,
           title="Spending", 
           type = "text",
-          keep=c("om_flag"),
+          keep=c("om_flag","age","female","mm","hcc"),
           ci=TRUE, ci.level=0.95,
           apply.coef=exponentiate, apply.se = exponentiate,
           digits = 1, 
@@ -654,7 +684,7 @@ stargazer::stargazer(glmMatched1, glmMatched2, glmMatched3, glmMatched4, glmMatc
 stargazer::stargazer(glmMatched7, glmMatched8, glmMatched9, glmMatched10, glmMatched10a, glmMatched10b,glmMatched10c,glmMatched10d,glmMatched10e,glmMatched10f,glmMatched10g,
           title="Utilization", 
           type = "text",
-          keep=c("om_flag"),
+          keep=c("om_flag","age","female","mm","hcc"),
           ci=TRUE, ci.level=0.95,
           apply.coef=exponentiate,apply.se = exponentiate,
           digits = 1, 
@@ -665,7 +695,7 @@ stargazer::stargazer(glmMatched7, glmMatched8, glmMatched9, glmMatched10, glmMat
 stargazer::stargazer(glmMatched11, glmMatched11b, glmMatched11c, glmMatched5c, glmMatched5ca, glmMatched5cb,  glmMatched5cc,  glmMatched5cd,  glmMatched5ce,  glmMatched5cf,  glmMatched5cg, 
           title="Cost per Utilization", 
           type = "text",
-          keep=c("om_flag"),
+          keep=c("om_flag","age","female","mm","hcc"),
           ci=TRUE, ci.level=0.95,
           apply.coef=exponentiate,apply.se = exponentiate,
           digits = 1, 
@@ -673,7 +703,199 @@ stargazer::stargazer(glmMatched11, glmMatched11b, glmMatched11c, glmMatched5c, g
           column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
           out = "table3.txt")
 
+evalues.OLS(est = glmMatched1$coefficients[2],
+se = summary(glmMatched1)$coefficients['om_flag','Std. Error'],
+sd = sd(dta_run$logcost_md) )
+
+
+
+
+```
+
+
+#Sensitivity analyses:
+- exclude NICU and newborns, dialysis, pregnancy, hospice, rehab, and transplants
+- cap claimants to $50k/12mo
+- exclude those without a min # of member-months: 12
+
+
+```{r sens1}
+
+sens_m = dta_run %>%
+  filter(age != 0,
+         diag1 != "Z992",
+         diag1 != "Z340",
+         diag1 != "Z515",
+         diag1 != "F0",
+         diag1 != "T86",
+         (cost_md/mm) < (50000/12),
+         mm>12) 
+```
+
+#Sensitivity results 
+
+```{r ate1}
+
+glmMatched1_s <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+glmMatched2_s <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+glmMatched3_s <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+glmMatched4_s <- glm(formula = logcost_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+glmMatched5_s <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+
+glmMatched5a_s <- glm(formula = logcost_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+
+glmMatched5b_s <- glm(formula = logcost_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+
+glmMatched6_s <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+
+glmMatched6a_s <- glm(formula = logcost_drugadmin ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+glmMatched6b_s <- glm(formula = logcost_surg ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+glmMatched6c_s <- glm(formula = logcost_maternity ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+glmMatched6d_s <- glm(formula = logcost_labs ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+glmMatched6e_s <- glm(formula = logcost_rads ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+
+glmMatched7_s <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+
+glmMatched8_s <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+
+glmMatched9_s <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                   data    = sens_m)
+
+glmMatched10_s <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+
+
+glmMatched10a_s <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+
+glmMatched10b_s <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+glmMatched10c_s <- glm(formula = logcount_drugadmin ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+glmMatched10d_s <- glm(formula = logcount_surg ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+glmMatched10e_s <- glm(formula = logcount_maternity ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+glmMatched10f_s <- glm(formula = logcount_labs ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+glmMatched10g_s <- glm(formula = logcount_rads ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+glmMatched11_s <- glm(formula = cost_per_er ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+glmMatched11b_s <- glm(formula = cost_per_hosp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+glmMatched11c_s <- glm(formula = cost_per_pcp ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+glmMatched5c_s <- glm(formula = cost_per_spec ~ om_flag + age + female + mm + hcc + ccs ,
+                    data    = sens_m)
+
+
+glmMatched5ca_s <- glm(formula = cost_per_mh ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+glmMatched5cb_s <- glm(formula = cost_per_pt ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+
+glmMatched5cc_s <- glm(formula = cost_per_drugadmin ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+glmMatched5cd_s <- glm(formula = cost_per_surg ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+glmMatched5ce_s <- glm(formula = cost_per_maternity ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+glmMatched5cf_s <- glm(formula = cost_per_labs ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+glmMatched5cg_s <- glm(formula = cost_per_rads ~ om_flag + age + female + mm + hcc + ccs ,
+                     data    = sens_m)
+
+
+```
+
+#Sens table results 
+
+
+```{r coef1}
+
+exponentiate_s <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1_s, glmMatched2_s, glmMatched3_s, glmMatched4_s, glmMatched5_s, glmMatched5a_s, glmMatched5b_s, glmMatched6,glmMatched6a,glmMatched6b,glmMatched6c,glmMatched6d,glmMatched6e,
+          title="Spending", 
+          type = "text",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate, apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table1s.txt")
+
+stargazer::stargazer(glmMatched7_s, glmMatched8_s, glmMatched9_s, glmMatched10_s, glmMatched10a_s, glmMatched10b,glmMatched10c,glmMatched10d,glmMatched10e,glmMatched10f,glmMatched10g,
+          title="Utilization", 
+          type = "text",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table2s.txt")
+
+stargazer::stargazer(glmMatched11_s, glmMatched11b_s, glmMatched11c_s, glmMatched5c_s, glmMatched5ca_s, glmMatched5cb,  glmMatched5cc,  glmMatched5cd,  glmMatched5ce,  glmMatched5cf,  glmMatched5cg, 
+          title="Cost per Utilization", 
+          type = "text",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table3s.txt")
+
 save.image("~/Box/Analytics Team/Research/Research projects/One medical/onemedical.RData")
 
 
 ```
+
