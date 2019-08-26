@@ -9,10 +9,7 @@ Pallen Chiu4, John Jackson4, Eun Yeong Kim5
 4 Enterprise Analytics, One Medical, San Francisco, California
 5 SpaceX, Hawthorne, California
 
-* to whom correspondence should be addressed:
-85 Bluxome Street
-San Francisco, CA 94107
-sanjay.basu@collectivehealth.com
+*sanjay.basu@collectivehealth.com
 
 Primary care clinical services are increasingly deployed at or near workplaces, and subsidized by employers.
 
