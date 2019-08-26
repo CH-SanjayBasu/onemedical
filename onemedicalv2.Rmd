@@ -504,6 +504,7 @@ dta_run = dta_m %>%
         )
 ```
 
+
 ```{r table 1}
 # pre-match
 prem = spacex_dat_ana %>%
@@ -520,7 +521,7 @@ prem = spacex_dat_ana %>%
          count_rads = 1000*count_rads
   )
 pretable = CreateTableOne(data =prem, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,  "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads", "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "vrt_flag" ,"cnt_flag"), strata="om_flag", test = T)
-pretab = print(pretable, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+pretab = print(pretable, smd = TRUE, contDigits=3, catDigits=3, noSpaces = TRUE, quote = T)
 
 
 
@@ -540,8 +541,92 @@ postm = dta_m %>%
   )
 
 posttable = CreateTableOne(data =postm, vars = c("age", "female", "hcc", "mm",  "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads","count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "vrt_flag" ,"cnt_flag"), strata="om_flag", test = F)
-posttab = print(posttable, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+posttab = print(posttable, smd = TRUE, contDigits=3, catDigits=3, noSpaces = TRUE, quote = T)
 
+
+
+```
+
+# table 2
+
+```{r table 2}
+matchids = cbind(dta_run$personid.x,dta_run$om_flag) 
+colnames(matchids) = c("personid.x","om_flag")
+matchids = as.tibble(matchids)
+
+ctr_sub2 = ctr
+ctr_sub2$Name = str_to_title(ctr$Name)
+ctr_sub2$Name = toTitleCase(ctr$Name)
+ctr_sub2$`Primary Diagnosis` = as.character(gsub("[\\.]", "", ctr_sub2$`Primary Diagnosis`))
+
+ctr_sub2 = ctr_sub2 %>%
+  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop", warn = "left") %>%
+  left_join(mbr_sub,"firstname","lastname") %>%
+  mutate(dos = mdy(DOS),
+         `Metaclaims Analytics Medical Service Date Start Date` = dos,
+         `Metaclaims Analytics Medical Allowed Amount` = "Allowed",
+         om_flag = as.logical(1),
+         em_flag = ((CPT=='99201')|
+                    (CPT=='99202')|
+                    (CPT=='99203')|
+                    (CPT=='99204')|
+                    (CPT=='99205')|
+                    (CPT=='99211')|
+                    (CPT=='99212')|
+                    (CPT=='99213')|
+                    (CPT=='99214')|
+                    (CPT=='99215')),
+         pt_flag = ((Billing=='KSPANGENBE[109557787]')|
+                    (Billing=='MMARCUCCIL[109565213]')),
+         mh_flag = ((Billing=='Darling[109701110]')|
+                      (Billing=='GFRANK[109571370]')),
+         diag1 = getmode(`Primary Diagnosis`),
+         pos = ("Office Visits - PCP")) 
+
+ctr_sub2$pos[ctr_sub2$mh_flag==1] = "Mental Health and Substance Use" 
+ctr_sub2$pos[ctr_sub2$pt_flag==1] = "Physical Medicine" 
+
+feesch_sub = feesch %>%
+  mutate(`Metaclaims Analytics Medical Allowed Amount` = Fee) %>%
+  select(CPT,`Metaclaims Analytics Medical Allowed Amount`)
+
+ctr_sub2 = full_join(ctr_sub2,feesch_sub,by="CPT") %>%  
+  select(-CPT) %>%
+  mutate(cnt_flag = 1)
+
+clm_tot2 = bind_rows(clm,ctr_sub2)
+
+tab2 = clm_tot2 %>%
+  right_join(matchids, by = c("Metaclaims Analytics Medical Person ID" = "personid.x")) %>%
+  mutate(dos = `Metaclaims Analytics Medical Service Date Start Date`) %>%
+  group_by("Metaclaims Analytics Medical Person ID",dos) %>%
+  mutate(pos = `Metaclaims Analytics Medical Service Category Detail`,
+         cost_per_er = (`Metaclaims Analytics Medical Allowed Amount`)*(pos=="Emergency Room"),
+         cost_per_hosp = (`Metaclaims Analytics Medical Allowed Amount`)*(pos=="Inpatient Visits"|pos=="Medical"),
+         cost_per_pcp = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Office Visits - PCP")|(pos=="Preventive Visits - PCP")),
+         cost_per_spec = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Office Visits - Specialist")|(pos=="Preventive Visits - Specialist")),
+         cost_per_mh = (`Metaclaims Analytics Medical Allowed Amount`)*(pos=="Mental Health and Substance Use" | pos=="Psychiatry"),
+         cost_per_pt = (`Metaclaims Analytics Medical Allowed Amount`)*(pos=="Physical Medicine"),
+         cost_per_drugadmin = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Administered drug inc Chemo")|(pos=="Administration of drug")|(pos=="Immunizations")),
+         cost_per_surg = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Anesthesia")|(pos=="Outpatient Surgery")|(pos=="Surgery")|(pos=="Surgical and Transplant")),
+         cost_per_maternity = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Labor and Delivery" | pos=="Newborns")),
+         cost_per_labs = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Lab Pathology" | pos=="Pathology Lab")),
+         cost_per_rads = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Radiology")),
+         cost_per_er = na_if(cost_per_er,0),
+         cost_per_hosp = na_if(cost_per_hosp,0),
+         cost_per_pcp = na_if(cost_per_pcp,0),
+         cost_per_spec = na_if(cost_per_spec,0),
+         cost_per_mh = na_if(cost_per_mh,0),
+         cost_per_pt = na_if(cost_per_pt,0),
+         cost_per_drugadmin = na_if(cost_per_drugadmin,0),
+         cost_per_surg = na_if(cost_per_surg,0),
+         cost_per_maternity =na_if(cost_per_maternity,0),
+         cost_per_labs = na_if(cost_per_labs,0),
+         cost_per_rads = na_if(cost_per_rads,0))
+
+
+tab2tab = CreateTableOne(data =tab2, vars = c("cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag.y", test = F)
+print(tab2tab, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
 
 
 ```
@@ -1178,7 +1263,7 @@ spacex_dat_ana2 = mbr_sub2 %>%
 
 
 summary(spacex_dat_ana2)
-
+spacex_dat_ana2$om_flag = round(spacex_dat_ana2$om_flag)
 spacex_dat_cov <- c('age', 'female', 'mm', 'membermo', 'hcc', 'ccs', 'diag1',  'zip')
 
 spacex_dat_nomiss2 = as.data.frame(spacex_dat_ana2)
@@ -1243,6 +1328,85 @@ dta_run2 = dta_m2 %>%
         )
 
 ```
+
+```{r match2}
+prem2 = spacex_dat_ana2 %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+pretable2 = CreateTableOne(data =prem2, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,  "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads", "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "vrt_flag" ,"cnt_flag"), strata="om_flag", test = T)
+pretab2 = print(pretable2, smd = TRUE, contDigits=3, catDigits=3, noSpaces = TRUE, quote = T)
+
+postm2 = dta_run2 %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+posttable2 = CreateTableOne(data =postm2, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,  "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads", "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "vrt_flag" ,"cnt_flag"), strata="om_flag", test = T)
+posttab2 = print(posttable2, smd = TRUE, contDigits=3, catDigits=3, noSpaces = TRUE, quote = T)
+
+```
+
+```{r etable11}
+
+matchids2 = cbind(dta_run2$personid.x,dta_run$om_flag) 
+colnames(matchids2) = c("personid.x","om_flag")
+matchids2 = as.tibble(matchids2)
+
+clm_tot2 = bind_rows(clm_cont,ctr_sub2)
+
+tab211 = clm_tot2 %>%
+  right_join(matchids2, by = c("Metaclaims Analytics Medical Person ID" = "personid.x")) %>%
+  mutate(dos = `Metaclaims Analytics Medical Service Date Start Date`) %>%
+  group_by("Metaclaims Analytics Medical Person ID",dos) %>%
+  mutate(pos = `Metaclaims Analytics Medical Service Category Detail`,
+         cost_per_er = (`Metaclaims Analytics Medical Allowed Amount`)*(pos=="Emergency Room"),
+         cost_per_hosp = (`Metaclaims Analytics Medical Allowed Amount`)*(pos=="Inpatient Visits"|pos=="Medical"),
+         cost_per_pcp = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Office Visits - PCP")|(pos=="Preventive Visits - PCP")),
+         cost_per_spec = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Office Visits - Specialist")|(pos=="Preventive Visits - Specialist")),
+         cost_per_mh = (`Metaclaims Analytics Medical Allowed Amount`)*(pos=="Mental Health and Substance Use" | pos=="Psychiatry"),
+         cost_per_pt = (`Metaclaims Analytics Medical Allowed Amount`)*(pos=="Physical Medicine"),
+         cost_per_drugadmin = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Administered drug inc Chemo")|(pos=="Administration of drug")|(pos=="Immunizations")),
+         cost_per_surg = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Anesthesia")|(pos=="Outpatient Surgery")|(pos=="Surgery")|(pos=="Surgical and Transplant")),
+         cost_per_maternity = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Labor and Delivery" | pos=="Newborns")),
+         cost_per_labs = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Lab Pathology" | pos=="Pathology Lab")),
+         cost_per_rads = (`Metaclaims Analytics Medical Allowed Amount`)*((pos=="Radiology")),
+         cost_per_er = na_if(cost_per_er,0),
+         cost_per_hosp = na_if(cost_per_hosp,0),
+         cost_per_pcp = na_if(cost_per_pcp,0),
+         cost_per_spec = na_if(cost_per_spec,0),
+         cost_per_mh = na_if(cost_per_mh,0),
+         cost_per_pt = na_if(cost_per_pt,0),
+         cost_per_drugadmin = na_if(cost_per_drugadmin,0),
+         cost_per_surg = na_if(cost_per_surg,0),
+         cost_per_maternity =na_if(cost_per_maternity,0),
+         cost_per_labs = na_if(cost_per_labs,0),
+         cost_per_rads = na_if(cost_per_rads,0))
+
+
+tab2tab11 = CreateTableOne(data =tab211, vars = c("cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag.y", test = F)
+print(tab2tab11, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+
+```
+
+# regs
 
 ```{r ate2}
 
