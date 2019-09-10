@@ -11,7 +11,7 @@ output:
 ##Import dependencies/packages
 
 ```{r setup, include=FALSE}
-rm(list=ls())
+# rm(list=ls())
 # install.packages('knitr', repos = "http://cran.us.r-project.org")
 knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, message = FALSE, cache.lazy = FALSE)
 # install.packages('tidyverse', repos = "http://cran.us.r-project.org")
@@ -1273,7 +1273,7 @@ spacex_dat_nomiss2 = as.data.frame(spacex_dat_nomiss2)
 start_time <- Sys.time()
 
 set.seed(1)
-mod_match2 <- matchit(om_flag ~ age + female + ccs + hcc + mm  + zip,
+mod_match2 <- matchit(om_flag ~ age + female + ccs + hcc + mm ,
                      method = "nearest", data = spacex_dat_nomiss2, caliper = .10)
 end_time <- Sys.time()
 
@@ -1291,7 +1291,7 @@ dta_m2 %>%
 
 print(CreateTableOne(vars = c("age", "female", "hcc", "mm", "ccs", "zip"), strata = "om_flag", data = dta_m2, test = T), smd = TRUE, noSpaces = TRUE)
 
-dta_run2 = dta_m %>%
+dta_run2 = dta_m2 %>%
   mutate(logcost_md = log(cost_md+1),
          logcost_er = log(cost_er+1),
          logcost_hosp = log(cost_hosp+1),
