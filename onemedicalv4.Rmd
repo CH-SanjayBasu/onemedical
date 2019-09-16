@@ -104,7 +104,8 @@ clm_sub = clm_dol %>%
                     (`Metaclaims Analytics Medical Procedure Code`=='99214')|
                     (`Metaclaims Analytics Medical Procedure Code`=='99215')),
             diag1 = (`Metaclaims Analytics Medical Principal Diag`),
-            cost_md = (`Metaclaims Analytics Medical Allowed Amount`)) %>%
+            cost_md = (`Metaclaims Analytics Medical Allowed Amount`),
+         ctr_flag = as.logical((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1922470392))) %>%
   filter(dos<="2019-07-01") 
 
 ctr_sub = ctr
@@ -131,7 +132,8 @@ ctr_sub = ctr_sub %>%
          mh_flag = ((Billing=='Darling[109701110]')|
                       (Billing=='GFRANK[109571370]')),
          diag1 = getmode(`Primary Diagnosis`),
-         pos = NA)   
+         pos = NA,
+         ctr_flag=as.logical(1))   
 
 ctr_sub$pos[ctr_sub$mh_flag==1] = "Mental Health and Substance Use" 
 ctr_sub$pos[ctr_sub$pt_flag==1] = "Physical Medicine" 
@@ -241,7 +243,7 @@ ctr_sub = full_join(ctr_sub,feesch_sub,by="CPT")
 ctr_sub$cost_md[is.na(ctr_sub$cost_md)==1] = ctr_sub$`Allowed - Contract`[is.na(ctr_sub$cost_md)==1]
 
 ctr_sub = ctr_sub %>%
-  select(firstname,lastname,female,em_flag,om_flag,diag1,pos,cost_md)
+  select(firstname,lastname,female,em_flag,om_flag,diag1,pos,cost_md,ctr_flag)
 
 clm_sub = full_join(clm_sub,feesch, by=c("Metaclaims Analytics Medical Procedure Code" = "CPT")) %>%
   mutate(cost_md = replace_na(cost_md,0),
@@ -262,6 +264,7 @@ clm_tot = clm_tot %>%
   group_by(firstname, lastname,female) %>%
   # filter(any(em_flag==1)) %>%
   summarise(om_flag = getmode(om_flag[em_flag==1]),
+            ctr_flag = getmode(ctr_flag),
             diag1 = getmode(diag1),
             count_drugadmin = sum((pos=="Administered drug inc Chemo")|(pos=="Administration of drug")|(pos=="Immunizations")),
             cost_drugadmin =sum((cost_md[pos=="Administered drug inc Chemo"|pos=="Administration of drug"|(pos=="Immunizations")])),
@@ -298,7 +301,7 @@ clm_tot = clm_tot %>%
             cost_per_pt =  mean(cost_md[pos=="Physical Medicine"], na.rm=T),
             cost_other = sum(cost_md[(pos!="Administered drug inc Chemo")|(pos!="Administration of drug")|(pos!="Immunizations")|(pos!="Anesthesia")|(pos!="Outpatient Surgery")|(pos!="Surgery")|(pos!="Surgical and Transplant")|(pos!="Labor and Delivery") | (pos!="Newborns")|(pos!="Lab Pathology") | (pos!="Pathology Lab")|(pos!="Emergency Room")|(pos!="Radiology")|(pos!="Inpatient Visits")|(pos!="Medical")|(pos!="Inpatient Visits")|(pos!="Medical")|(pos!="Office Visits - PCP")|(pos!="Preventive Visits - PCP")|(pos!="Office Visits - Specialist")|(pos!="Preventive Visits - Specialist")|(pos!="Mental Health and Substance Use" | pos!="Psychiatry")|(pos!="Physical Medicine")]),
             cost_md = sum(cost_other+cost_drugadmin+cost_surg+cost_maternity+cost_labs+cost_er+cost_rads+cost_hosp+cost_pcp+cost_spec+cost_mh+cost_pt)) %>%   
-  select(firstname,lastname, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,count_mh,cost_mh,count_pt,cost_pt,count_drugadmin,cost_drugadmin,count_surg,cost_surg,count_maternity,cost_maternity,count_labs,cost_labs,count_rads,cost_rads,cost_per_drugadmin, cost_per_surg,cost_per_maternity,cost_per_labs,cost_per_er,cost_per_rads,cost_per_hosp,cost_per_pcp,cost_per_spec,cost_per_mh,cost_per_pt) %>%
+  select(firstname,lastname, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,count_mh,cost_mh,count_pt,cost_pt,count_drugadmin,cost_drugadmin,count_surg,cost_surg,count_maternity,cost_maternity,count_labs,cost_labs,count_rads,cost_rads,cost_per_drugadmin, cost_per_surg,cost_per_maternity,cost_per_labs,cost_per_er,cost_per_rads,cost_per_hosp,cost_per_pcp,cost_per_spec,cost_per_mh,cost_per_pt,ctr_flag) %>%
   ungroup()
 clm_tot$female[is.na(clm_tot$female)==1]=0
 
@@ -488,7 +491,8 @@ mutate(mm = membermo,
        ccs = replace_na(ccs,0),
        mm = membermo,
        ccs = as.factor(ccs),
-       zip = as.factor(zip)) 
+       zip = as.factor(zip),
+       ctr_flag = replace_na(ctr_flag,0)) 
 
 
 # monthly membership cost
@@ -608,7 +612,7 @@ prem = spacex_dat_ana %>%
 
 
 pretable = CreateTableOne(data =prem, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,  "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads", "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag", test = T)
-pretab = print(pretable, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+pretab = print(pretable, smd = TRUE, contDigits=3, catDigits=1, noSpaces = TRUE, quote = T)
 
 
 
@@ -629,7 +633,29 @@ postm = dta_m %>%
 
 
 posttable = CreateTableOne(data =postm, vars = c("age", "female", "hcc", "mm",  "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads","count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag", test = F)
-posttab = print(posttable, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+posttab = print(posttable, smd = TRUE, contDigits=3, catDigits=1, noSpaces = TRUE, quote = T)
+
+
+# ctr vs offsite
+ctrm = dta_m %>%
+  filter(om_flag==1) %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+
+
+ctrmtable = CreateTableOne(data =postm, vars = c("age", "female", "hcc", "mm",  "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads","count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="ctr_flag", test = F)
+ctrtab = print(ctrmtable, smd = TRUE, contDigits=3, catDigits=1, noSpaces = TRUE, quote = T)
+
 
 
 
