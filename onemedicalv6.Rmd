@@ -1,0 +1,1688 @@
+---
+title: "One Medical"
+author: "Sanjay Basu"
+date: "02/10/2020"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+##Import dependencies/packages
+
+```{r setup, include=FALSE}
+# rm(list=ls())
+# install.packages('knitr', repos = "http://cran.us.r-project.org")
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, message = FALSE, cache.lazy = FALSE)
+# install.packages('tidyverse', repos = "http://cran.us.r-project.org")
+# install.packages('lubridate', repos = "http://cran.us.r-project.org")
+# install.packages('readr', repos = "http://cran.us.r-project.org")
+# install.packages('stringr', repos = "http://cran.us.r-project.org")
+# install.packages('tableone', repos = "http://cran.us.r-project.org")
+# install.packages('MatchIt', repos = "http://cran.us.r-project.org")
+# install.packages('devtools', repos = "http://cran.us.r-project.org")
+# install.packages('stargazer', repos = "http://cran.us.r-project.org")
+# install.packages('EValue', repos = "http://cran.us.r-project.org")
+# install.packages('mice', repos = "http://cran.us.r-project.org")
+# install.packages('vcd', repos = "http://cran.us.r-project.org")
+# devtools::install_github("healthactuary/cmshcc")
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(stringr)
+library(tableone)
+library(tools)
+library(MatchIt)
+library(cmshcc)
+library(stargazer)
+library(EValue)
+library(mice)
+library(vcd)
+```
+
+##Import datasets
+
+```{r warning = FALSE, message = FALSE}
+setwd("~/Box/Analytics Team/Research/Research projects/One medical")
+mbr <- read_csv("spacex_members.csv")
+clm <- read_csv("spacex_claims.csv")
+rx <- read_csv("spacex_pharmacy.csv")
+ctr <- read_csv("SpaceX Health Center Claims 1016 to 1217.csv")
+vrt <- read_csv("SpaceX Member Virtual Services 0721919.csv")
+feesch <- read_csv("Blueshield LA allowed fee schedule.csv")
+```
+
+##Custom functions
+
+```{r cust}
+
+getmode <- function(v) {
+   force(v)
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+```
+
+##Format claims to combine CH claims to OM Center claims  
+
+```{r ch plus center}
+clm_dol = clm
+clm_dol$`Metaclaims Analytics Medical Allowed Amount` = as.numeric(gsub("[\\$,]", "", clm_dol$`Metaclaims Analytics Medical Allowed Amount`))
+clm_dol$`Metaclaims Analytics Medical First Name` = str_to_title(clm_dol$`Metaclaims Analytics Medical First Name`)
+clm_dol$`Metaclaims Analytics Medical Last Name` = str_to_title(clm_dol$`Metaclaims Analytics Medical Last Name`)
+
+clm_sub = clm_dol %>%
+  mutate(personid = (`Metaclaims Analytics Medical Person ID`),
+         female = (`Metaclaims Analytics Medical Gender`=="F"),
+         firstname = `Metaclaims Analytics Medical First Name`,
+         lastname = `Metaclaims Analytics Medical Last Name`,
+         pos = `Metaclaims Analytics Medical Service Category Detail`,
+         dos = `Metaclaims Analytics Medical Service Date Start Date`,
+         om_flag = ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460695495")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467701821))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460741732")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073862256))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="362169147")&(`Metaclaims Analytics Medical Billing Prov Npi`==1336709112))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="814542216")&(`Metaclaims Analytics Medical Billing Prov Npi`==1518438712))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="383906267")&(`Metaclaims Analytics Medical Billing Prov Npi`==1528538774))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="471708588")&(`Metaclaims Analytics Medical Billing Prov Npi`==1184014854))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="271346767")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467781641))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="911942315")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073553947))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812141065")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467800383))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="452282261")&(`Metaclaims Analytics Medical Billing Prov Npi`==1962798645))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="273009385")&(`Metaclaims Analytics Medical Billing Prov Npi`==1861709487))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812980907")&(`Metaclaims Analytics Medical Billing Prov Npi`==1598214397))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="270243800")&(`Metaclaims Analytics Medical Billing Prov Npi`==1144457151))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="020619758")&(`Metaclaims Analytics Medical Billing Prov Npi`==1497786883))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="461773122")&(`Metaclaims Analytics Medical Billing Prov Npi`==1508103169))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1417382102))|
+                   ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1922470392)),
+         em_flag = ((`Metaclaims Analytics Medical Procedure Code`=='99201')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99202')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99203')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99204')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99205')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99211')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99212')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99213')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99214')|
+                    (`Metaclaims Analytics Medical Procedure Code`=='99215')),
+            diag1 = (`Metaclaims Analytics Medical Principal Diag`),
+            cost_md = (`Metaclaims Analytics Medical Allowed Amount`),
+         ctr_flag = as.logical((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1922470392)),
+         near_flag = (ctr_flag!=1)&(om_flag==1),
+         CPT = `Metaclaims Analytics Medical Procedure Code`) %>%
+  filter(dos<="2019-07-01") 
+
+ctr_sub = ctr
+ctr_sub$Name = str_to_title(ctr$Name)
+ctr_sub$`Primary Diagnosis` = as.character(gsub("[\\.]", "", ctr_sub$`Primary Diagnosis`))
+
+ctr_sub = ctr_sub %>%
+  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop") %>%
+  mutate(dos = mdy(DOS)) %>%
+  mutate(female= getmode((Gender=='F')),
+         om_flag = as.logical(1),
+         em_flag = ((CPT=='99201')|
+                    (CPT=='99202')|
+                    (CPT=='99203')|
+                    (CPT=='99204')|
+                    (CPT=='99205')|
+                    (CPT=='99211')|
+                    (CPT=='99212')|
+                    (CPT=='99213')|
+                    (CPT=='99214')|
+                    (CPT=='99215')),
+         pt_flag = ((Billing=='KSPANGENBE[109557787]')|
+                    (Billing=='MMARCUCCIL[109565213]')),
+         mh_flag = ((Billing=='Darling[109701110]')|
+                      (Billing=='GFRANK[109571370]')),
+         diag1 = getmode(`Primary Diagnosis`),
+         pos = NA,
+         ctr_flag=as.logical(1),
+         cost_md = as.double("Allowed - Contract"),
+         near_flag=as.logical(0))
+
+ctr_sub$pos[ctr_sub$mh_flag==1] = "Mental Health and Substance Use" 
+ctr_sub$pos[ctr_sub$pt_flag==1] = "Physical Medicine" 
+
+ctr_sub$pos[ctr_sub$CPT=="10060"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="10061"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="10120"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="11100"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="11200"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="11400"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="11401"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="11730"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="11740"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="11900"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="11982"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="17110"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="17111"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="20553"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="20610"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="20612"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="36415"] = "Other"
+ctr_sub$pos[ctr_sub$CPT=="69209"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="86580"] = "Pathology Lab"
+ctr_sub$pos[ctr_sub$CPT=="90460"] = "Administration of drug"
+ctr_sub$pos[ctr_sub$CPT=="90471"] = "Administration of drug"
+ctr_sub$pos[ctr_sub$CPT=="90472"] = "Administration of drug"
+ctr_sub$pos[ctr_sub$CPT=="90632"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90649"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90651"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90656"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90656"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90670"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90674"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90686"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90691"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90707"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90713"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90714"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90715"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90716"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90732"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90734"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90736"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90746"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="90791"] = "Psychiatry"
+ctr_sub$pos[ctr_sub$CPT=="90792"] = "Psychiatry"
+ctr_sub$pos[ctr_sub$CPT=="90832"] = "Psychiatry"
+ctr_sub$pos[ctr_sub$CPT=="90834"] = "Psychiatry"
+ctr_sub$pos[ctr_sub$CPT=="90837"] = "Psychiatry"
+ctr_sub$pos[ctr_sub$CPT=="90839"] = "Psychiatry"
+ctr_sub$pos[ctr_sub$CPT=="96372"] = "Administration of drug"
+ctr_sub$pos[ctr_sub$CPT=="97001"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97002"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97010"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97014"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97033"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97110"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97112"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97116"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97140"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97161"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97162"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97164"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97170"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="97530"] = "Physical Medicine"
+ctr_sub$pos[ctr_sub$CPT=="99201"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99201"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99201"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99201"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99201"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99202"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99203"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99204"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99212"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99213"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99214"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99215"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99243"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99244"] = "Office Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99384"] = "Preventive Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99385"] = "Preventive Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99386"] = "Preventive Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99395"] = "Preventive Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99396"] = "Preventive Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="99397"] = "Preventive Visits - PCP"
+ctr_sub$pos[ctr_sub$CPT=="G0008"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="Q2038"] = "Immunizations"
+ctr_sub$pos[ctr_sub$CPT=="J0696"] = "Administration of drug"
+ctr_sub$pos[ctr_sub$CPT=="J1050"] = "Administration of drug"
+ctr_sub$pos[ctr_sub$CPT=="J1885"] = "Administration of drug"
+ctr_sub$pos[ctr_sub$CPT=="J3301"] = "Administration of drug"
+ctr_sub$pos[is.na(ctr_sub$pos)==1 & (as.numeric(ctr_sub$CPT)>="10040" & as.numeric(ctr_sub$CPT)<="69210")] = "Office Visits - PCP"
+ctr_sub$pos[is.na(ctr_sub$pos)==1 & (as.numeric(ctr_sub$CPT)>="76801" & as.numeric(ctr_sub$CPT)<="76942")] = "Radiology"
+ctr_sub$pos[is.na(ctr_sub$pos)==1 & (as.numeric(ctr_sub$CPT)>="90461" & as.numeric(ctr_sub$CPT)<="90474")] = "Administration of drug"
+ctr_sub$pos[is.na(ctr_sub$pos)==1 & (as.numeric(ctr_sub$CPT)>="90461" & as.numeric(ctr_sub$CPT)<="90840")] = "Administration of drug"
+ctr_sub$pos[is.na(ctr_sub$pos)==1 & (as.numeric(ctr_sub$CPT)>="93000" & as.numeric(ctr_sub$CPT)<="96160")] = "Other"
+ctr_sub$pos[is.na(ctr_sub$pos)==1 & (as.numeric(ctr_sub$CPT)>="97032" & as.numeric(ctr_sub$CPT)<="98968")] = "Physical Medicine"
+ctr_sub$pos[is.na(ctr_sub$pos)==1 & (as.numeric(ctr_sub$CPT)>="99173" & as.numeric(ctr_sub$CPT)<="99497")] = "Other"
+ctr_sub$pos[is.na(ctr_sub$pos)==1] = "Administration of drug"
+
+feesch_sub = feesch %>%
+  mutate(cost_md = Fee) %>%
+  select(CPT,cost_md)
+
+ctr_sub = full_join(ctr_sub,feesch_sub,by="CPT")
+
+ctr_sub$cost_md[is.na(ctr_sub$cost_md)==1] = ctr_sub$`Allowed - Contract`[is.na(ctr_sub$cost_md)==1]
+
+ctr_sub = ctr_sub %>%
+  mutate(cost_md = cost_md.y) %>%
+  select(firstname,lastname,female,em_flag,om_flag,diag1,pos,cost_md,ctr_flag,CPT,near_flag,dos)
+
+clm_sub = full_join(clm_sub,feesch, by=c("Metaclaims Analytics Medical Procedure Code" = "CPT")) %>%
+  mutate(cost_md = replace_na(cost_md,0),
+         om_flag = replace_na(om_flag,0))
+clm_sub$cost_md[clm_sub$cost_md==0 & clm_sub$om_flag==1] = clm_sub$Fee[clm_sub$cost_md==0 & clm_sub$om_flag==1]
+
+
+```
+
+## OM attribution and utilization counts
+  
+```{r elig clm}
+
+clm_sub$om_flag = as.logical(clm_sub$om_flag)
+
+clm_tot = bind_rows(clm_sub,ctr_sub)
+  
+clm_ccs = clm_tot  %>%
+  filter(dos<"2017-01-01") %>%
+  group_by(firstname, lastname,female) %>%
+#  filter(any(em_flag==1)) %>%
+  summarise(diag1 = getmode(diag1)) %>%   
+  ungroup() 
+
+clm_tot = clm_tot  %>%
+  filter(dos>="2017-01-01") %>%
+  group_by(firstname, lastname,female) %>%
+#  filter(any(em_flag==1)) %>%
+  summarise(om_flag = getmode(om_flag[em_flag==1]),
+            ctr_flag = getmode(ctr_flag),
+            near_flag = getmode(near_flag),
+            CPT = getmode(CPT),
+            count_drugadmin = sum((pos=="Administered drug inc Chemo")|(pos=="Administration of drug")|(pos=="Immunizations")),
+            cost_drugadmin =sum((cost_md[pos=="Administered drug inc Chemo"|pos=="Administration of drug"|(pos=="Immunizations")])),
+            cost_per_drugadmin = mean((cost_md[pos=="Administered drug inc Chemo"|pos=="Administration of drug"|(pos=="Immunizations")]),na.rm=T),
+            count_surg = sum((pos=="Anesthesia")|(pos=="Outpatient Surgery")|(pos=="Surgery")|(pos=="Surgical and Transplant")),
+            cost_surg = sum(cost_md[(pos=="Anesthesia")|(pos=="Outpatient Surgery")|(pos=="Surgery")|(pos=="Surgical and Transplant")]),
+            cost_per_surg = mean(cost_md[(pos=="Anesthesia")|(pos=="Outpatient Surgery")|(pos=="Surgery")|(pos=="Surgical and Transplant")],na.rm=T),
+            count_maternity = sum(pos=="Labor and Delivery" | pos=="Newborns"),
+            cost_maternity = sum(cost_md[(pos=="Labor and Delivery" | pos=="Newborns")]),
+            cost_per_maternity = mean(cost_md[(pos=="Labor and Delivery" | pos=="Newborns")],na.rm=T),
+            count_labs = sum(pos=="Lab Pathology" | pos=="Pathology Lab"),
+            cost_labs = sum(cost_md[(pos=="Lab Pathology" | pos=="Pathology Lab")]),
+            cost_per_labs = mean(cost_md[(pos=="Lab Pathology" | pos=="Pathology Lab")],na.rm=T),
+            count_er = sum(pos=="Emergency Room"),
+            cost_er = sum(cost_md[pos=="Emergency Room"]),
+            cost_per_er = mean(cost_md[pos=="Emergency Room"],na.rm=T),
+            count_rads = sum(pos=="Radiology"),
+            cost_rads = sum(cost_md[pos=="Radiology"]),
+            cost_per_rads = mean(cost_md[pos=="Radiology"],na.rm=T),
+            count_hosp = sum(pos=="Inpatient Visits"|pos=="Medical"),
+            cost_hosp = sum(cost_md[pos=="Inpatient Visits"|pos=="Medical"]),
+            cost_per_hosp = mean(cost_md[pos=="Inpatient Visits"|pos=="Medical"],na.rm=T),
+            count_pcp = sum(((pos=="Office Visits - PCP")|(pos=="Preventive Visits - PCP"))&em_flag==1),
+            cost_pcp = sum((cost_md[(pos=="Office Visits - PCP"|pos=="Preventive Visits - PCP")&em_flag==1])),
+            cost_per_pcp = mean((cost_md[(pos=="Office Visits - PCP"|pos=="Preventive Visits - PCP")&em_flag==1]),na.rm=T),
+            count_spec = sum((pos=="Office Visits - Specialist")|(pos=="Preventive Visits - Specialist")),
+            cost_spec = sum((cost_md[pos=="Office Visits - Specialist"|pos=="Preventive Visits - Specialist"])),
+            cost_per_spec = mean((cost_md[pos=="Office Visits - Specialist"|pos=="Preventive Visits - Specialist"]),na.rm=T),
+            count_mh = sum(pos=="Mental Health and Substance Use" | pos=="Psychiatry"),
+            cost_mh = sum(cost_md[pos=="Mental Health and Substance Use" | pos=="Psychiatry"]),
+            cost_per_mh = mean(cost_md[pos=="Mental Health and Substance Use" | pos=="Psychiatry"], na.rm=T),
+            count_pt = sum(pos=="Physical Medicine"),
+            cost_pt = sum(cost_md[pos=="Physical Medicine"]),
+            cost_per_pt =  mean(cost_md[pos=="Physical Medicine"], na.rm=T),
+            cost_other = sum(cost_md[(pos!="Administered drug inc Chemo")|(pos!="Administration of drug")|(pos!="Immunizations")|(pos!="Anesthesia")|(pos!="Outpatient Surgery")|(pos!="Surgery")|(pos!="Surgical and Transplant")|(pos!="Labor and Delivery") | (pos!="Newborns")|(pos!="Lab Pathology") | (pos!="Pathology Lab")|(pos!="Emergency Room")|(pos!="Radiology")|(pos!="Inpatient Visits")|(pos!="Medical")|(pos!="Inpatient Visits")|(pos!="Medical")|(pos!="Office Visits - PCP")|(pos!="Preventive Visits - PCP")|(pos!="Office Visits - Specialist")|(pos!="Preventive Visits - Specialist")|(pos!="Mental Health and Substance Use" | pos!="Psychiatry")|(pos!="Physical Medicine")]),
+            cost_md = sum(cost_other+cost_drugadmin+cost_surg+cost_maternity+cost_labs+cost_er+cost_rads+cost_hosp+cost_pcp+cost_spec+cost_mh+cost_pt)) %>%   
+  ungroup() 
+
+clm_tot = clm_tot  %>%
+  full_join(clm_ccs, by = c("firstname","lastname","female"))
+  
+clm_tot$female[is.na(clm_tot$female)==1]=0
+
+```
+
+##Member org
+
+```{r elig mbr}
+mbr_sub = mbr
+mbr_sub$`Analytics Member Months First Name` = str_to_title(mbr_sub$`Analytics Member Months First Name`)
+mbr_sub$`Analytics Member Months Last Name` = str_to_title(mbr_sub$`Analytics Member Months Last Name`)
+
+mbr_sub = mbr_sub %>%
+  mutate(personid = `Analytics Member Months Person ID`) %>%
+  group_by(personid) %>%
+  mutate(start = min(`Analytics Member Months Start Date`),
+         end = max(`Analytics Member Months End Date`),
+         age = mean(`Analytics Member Months Age`),
+         female = (`Analytics Member Months Gender`=='F'),
+         firstname = `Analytics Member Months First Name`,
+         lastname = `Analytics Member Months Last Name`,
+         membermo = interval(start,end)/months(1),
+         DOB = `Analytics Member Months Date of Birth Date`,
+         zip = as.factor(`Analytics Member Months Current Postal Code`)) %>%
+  select(age, female, personid, firstname, lastname, membermo, DOB, zip) %>%
+  distinct()
+```
+
+##Add in pharmacy claims  
+
+```{r elig rx}
+rx_dol = rx
+rx_dol$`Analytics Claims Pharmacy Allowed Amount` = as.numeric(gsub("[\\$,]", "", rx_dol$`Analytics Claims Pharmacy Allowed Amount`))
+rx_dol$`Analytics Claims Pharmacy First Name` = str_to_title(rx_dol$`Analytics Claims Pharmacy First Name`)
+rx_dol$`Analytics Claims Pharmacy Last Name` = str_to_title(rx_dol$`Analytics Claims Pharmacy Last Name`)
+
+rx_sub = rx_dol %>%
+  mutate(personid = `Analytics Claims Pharmacy Person ID`) %>%
+  group_by(personid) %>%
+  mutate(female = (`Analytics Claims Pharmacy Gender`=="F"),
+         firstname = `Analytics Claims Pharmacy First Name`,
+         lastname = `Analytics Claims Pharmacy Last Name`,
+         cost_rx = sum(`Analytics Claims Pharmacy Allowed Amount`)) %>%
+  select(female, personid, firstname,lastname,cost_rx) %>%
+  distinct()
+```
+
+
+##Virtual visits
+
+```{r vrt}
+vrt_sub = vrt
+vrt_sub$`dphi.patient_first_name` = str_to_title(vrt_sub$`dphi.patient_first_name`)
+vrt_sub$`dphi.patient_last_name` = str_to_title(vrt_sub$`dphi.patient_last_name`)
+
+vrt_sub = vrt_sub %>%
+  mutate(vrt_flag = 1,
+         firstname = dphi.patient_first_name,
+         lastname = dphi.patient_last_name) %>%
+  select(firstname, lastname, vrt_flag) %>%
+  distinct()
+
+
+```
+
+##util stats
+```{r utils}
+
+
+table(vrt$fce.clinical_encounter_type)/dim(vrt)[1]*100
+
+utilstats = bind_rows(clm_sub,ctr_sub) %>%
+  filter(dos>="2017-01-01") %>%
+  full_join(mbr_sub, by = c("firstname","lastname","female")) %>%
+  full_join(vrt_sub, by = c("firstname","lastname")) 
+
+utilstats$vrt_flag[is.na(utilstats$vrt_flag)==1]=0
+
+mm = mbr_sub %>%
+  group_by(firstname,lastname,female) %>%
+  summarise(mm = mean(membermo))
+
+sum(na.omit(utilstats$ctr_flag))/sum(mm$mm)*1000
+sum(na.omit(utilstats$near_flag))/sum(mm$mm)*1000
+sum(na.omit(utilstats$vrt_flag))/sum(mm$mm)*1000
+
+allvis = utilstats %>%
+  group_by(firstname,lastname,female) %>%
+  summarise(cnt_util =max(ctr_flag)==1,
+            cnt_util = replace_na(cnt_util,0),
+         near_util = max(near_flag)==1,
+            near_util = replace_na(near_util,0),
+         vrt_util = max(vrt_flag)==1,
+            vrt_util = replace_na(vrt_util,0),
+         mm = mean(membermo)) %>%
+  select(cnt_util,near_util,vrt_util,mm)
+
+sum(na.omit(allvis$cnt_util==1))/dim(allvis)[1]
+sum(na.omit(allvis$near_util==1))/dim(allvis)[1]
+sum(na.omit(allvis$vrt_util==1))/dim(allvis)[1]
+
+allvis_df = cbind(allvis$cnt_util,allvis$near_util,allvis$vrt_util)
+colnames(allvis_df) = c("On-site visitors", "Near-site visitors", "Virtual visitors")
+allvis_df = as.data.frame(allvis_df)
+library(vcd)
+tbl = structable(`On-site visitors`~`Near-site visitors`+`Virtual visitors`, data =allvis_df)
+mosaic(tbl, shade=TRUE, legend=F)
+
+
+```
+
+
+##HCC risk score
+
+```{r hcc}
+
+spacex_dat = mbr_sub %>% 
+  full_join(clm_tot, by = c("firstname","lastname","female")) %>%
+  full_join(rx_sub, by = c("firstname","lastname","female")) %>%
+  mutate(om_flag = replace_na(om_flag,0)) %>%
+  distinct()
+
+PERSON = spacex_dat %>%
+  ungroup() %>%
+  mutate(HICNO = personid.x,
+         SEX = if_else(female==1,"F","M"),
+         DOB = DOB,
+         MCAID = 0,
+         NMCAID = 0,
+         OREC = 0) %>%
+  select(HICNO, SEX, MCAID, NMCAID, OREC, DOB) %>% 
+  filter(!is.na(HICNO))
+
+cmshcc_map <- load_cmshcc_map()
+
+setwd("~/Box/Analytics Team/Research/Research projects/One medical")
+clm <- read_csv("spacex_claims.csv")
+
+clm_hcc  = clm %>%
+  filter("Metaclaims Analytics Medical Service Date Start Date"<"2017-01-01") %>%
+  mutate(HICNO = (`Metaclaims Analytics Medical Person ID`),
+         diag1 = `Metaclaims Analytics Medical Principal Diag`,
+         diag2 = `Metaclaims Analytics Medical Diag02`,
+         diag3 = `Metaclaims Analytics Medical Diag03`,
+         diag4 = `Metaclaims Analytics Medical Diag04`,
+         diag5 = `Metaclaims Analytics Medical Diag05`,
+         diag6 = `Metaclaims Analytics Medical Diag06`,
+         diag7 = `Metaclaims Analytics Medical Diag07`,
+         diag8 = `Metaclaims Analytics Medical Diag08`,
+         diag9 = `Metaclaims Analytics Medical Diag09`,
+         diag10 = `Metaclaims Analytics Medical Diag10`) %>%
+  gather(Diag, DX, diag1:diag10, factor_key=T) %>%
+  select(HICNO,DX) %>%
+  arrange(HICNO)  %>% 
+  filter(!is.na(HICNO), !is.na(DX)) %>%
+  distinct()
+
+ctr_hcc = ctr
+ctr_hcc$Name = str_to_title(ctr$Name)
+
+ctr_hcc = ctr_hcc %>%
+  filter("DOS"<"2017-01-01") %>%
+  separate("Name",c("lastname","empty","firstname"),sep = "([\\, \\ ])", extra="drop") %>%
+  mutate(female= getmode((Gender=='F'))) %>%
+  separate(`All Diagnosis`, into=c("diag1","diag2","diag3","diag4","diag5","diag6","diag7","diag8","diag9","diag10"), sep = ", ", extra = "drop") %>%
+  full_join(mbr_sub, by = c("firstname","lastname","female"))  %>%
+  select(personid, diag1, diag2, diag3, diag4, diag5, diag6, diag7, diag8, diag9, diag10)  %>%
+  mutate(HICNO= personid) %>%
+  gather(Diag, DX, diag1:diag10, factor_key=T) %>%
+  select(HICNO,DX) %>%
+  arrange(HICNO)  %>% 
+  filter(!is.na(HICNO), !is.na(DX)) %>%
+  distinct()
+
+DIAG = bind_rows(clm_hcc, ctr_hcc)
+
+hcc = evaluate_v22_2017(PERSON, DIAG, "Community_NonDual_Aged")
+
+
+```
+
+## CCS cat
+
+```{r ccs}
+setwd("~/Box/Analytics Team/Research/Research projects/One medical")
+ccs <- read_csv("ccs_dx_icd10cm_2018_1.csv")
+ccs  =ccs %>%
+  mutate(diag1 = `ICD-10-CM CODE`,
+         ccs = `CCS CATEGORY`) %>%
+  select(diag1, ccs)
+
+```
+
+##Pre-match
+
+```{r na}
+spacex_dat_ana = mbr_sub %>% 
+  full_join(clm_tot, by = c("firstname","lastname","female")) %>%
+  full_join(rx_sub, by = c("firstname","lastname","female")) %>%
+  full_join(hcc, by = c("personid.x" = "HICNO")) %>%
+  full_join(vrt_sub, by = c("firstname","lastname")) %>%
+  left_join(ccs, c("diag1")) %>%
+  filter(!is.na(personid.x)) %>%
+mutate(mm = membermo,
+       om_flag = replace_na(om_flag,0),
+       vrt_flag = replace_na(vrt_flag,0),
+       cost_md = replace_na(cost_md,0),
+       count_er = replace_na(count_er,0),
+       cost_er = replace_na(cost_er,0),
+       count_hosp = replace_na(count_hosp,0),
+       cost_hosp = replace_na(cost_hosp,0),
+       count_pcp = replace_na(count_pcp,0),
+       cost_pcp = replace_na(cost_pcp,0),
+       count_spec = replace_na(count_spec,0),
+       cost_spec = replace_na(cost_spec,0),
+       count_mh = replace_na(count_mh,0),
+       count_pt = replace_na(count_pt,0),
+       cost_pt = replace_na(cost_pt,0),
+       cost_mh = replace_na(cost_mh,0),
+       cost_rx = replace_na(cost_rx,0),
+       cost_md = (cost_md+cost_rx)/mm,
+       cost_rx = (cost_rx)/mm, 
+       cost_er = (cost_er)/mm,
+       cost_hosp = (cost_hosp)/mm,
+       cost_pcp = (cost_pcp)/mm,
+       cost_spec = (cost_spec)/mm,
+       cost_mh = (cost_mh)/mm,
+       cost_pt = (cost_pt)/mm,
+       count_er = (count_er)/mm,
+       count_hosp = (count_hosp)/mm,
+       count_pcp = (count_pcp)/mm,
+       count_spec = (count_spec)/mm,
+       count_mh = (count_mh)/mm,
+       count_pt = (count_pt)/mm,
+       count_drugadmin = (count_drugadmin)/mm,
+       cost_drugadmin = (cost_drugadmin)/mm,
+       count_surg = (count_surg)/mm,
+       cost_surg = (cost_surg)/mm,
+       count_maternity = (count_maternity)/mm,
+       cost_maternity = (cost_maternity)/mm,
+       count_labs = (count_labs)/mm,
+       cost_labs = (cost_labs)/mm,
+       count_rads = (count_rads)/mm,
+       cost_rads = (cost_rads)/mm,
+       count_drugadmin = replace_na(count_drugadmin,0),
+       cost_drugadmin = replace_na(cost_drugadmin,0),
+       count_surg = replace_na(count_surg,0),
+       cost_surg = replace_na(cost_surg,0),
+       count_maternity = replace_na(count_maternity,0),
+       cost_maternity = replace_na(cost_maternity,0),
+       count_labs = replace_na(count_labs,0),
+       cost_labs = replace_na(cost_labs, 0),
+       count_rads = replace_na(count_rads, 0),
+       cost_rads = replace_na(cost_rads,0),
+       Community_NonDual_Aged = replace_na(Community_NonDual_Aged,0),
+       hcc = Community_NonDual_Aged,
+       ccs = replace_na(ccs,0),
+       mm = membermo,
+       ccs = as.factor(ccs),
+       zip = as.factor(zip),
+       ctr_flag = replace_na(ctr_flag,0)) 
+
+
+summary(spacex_dat_ana)
+
+
+```
+
+```{r imputation}
+
+tempData = mice(spacex_dat_ana, m = 1, maxit = 1, meth = 'pmm', seed = 123)
+spacex_dat_nomiss <- as.data.frame(complete(tempData,1))
+summary(spacex_dat_nomiss)
+
+```
+
+##Matching
+
+```{r matching}
+spacex_dat_cov <- c('age', 'female', 'mm', 'membermo', 'hcc', 'ccs', 'diag1',  'zip')
+
+spacex_dat_nomiss = spacex_dat_nomiss %>%
+  mutate(diag1=replace_na(diag1,0),
+         zip = replace_na(zip,0))
+
+spacex_dat_nomiss$zip <- substr(spacex_dat_nomiss$zip, 0, 3)
+
+spacex_dat_nomiss = spacex_dat_nomiss[complete.cases(spacex_dat_nomiss),]
+#spacex_dat_nomiss = as.data.frame(spacex_dat_ana)
+
+start_time <- Sys.time()
+
+set.seed(1)
+pscore_reg = glm(om_flag ~ age + female + ccs + hcc + mm +  zip,
+                     family = "binomial", data = spacex_dat_nomiss)
+summary(pscore_reg)
+
+mod_match <- matchit(om_flag ~ age + female + ccs + hcc + mm +  zip,
+                     method = "nearest", distance = "logit", data = spacex_dat_nomiss, caliper = .10)
+end_time <- Sys.time()
+
+end_time - start_time
+
+mod_match
+
+save.image("onemedical.RData")
+
+dta_m <- match.data(mod_match)
+dim(dta_m)
+
+dta_m %>%
+  group_by(om_flag) %>%
+  select(one_of(spacex_dat_cov)) %>%
+  summarise_all(funs(mean))
+
+#print(CreateTableOne(vars = c("age", "female", "hcc", "mm",  "ccs", "zip"), strata = "om_flag", data = dta_m, test = T), smd = TRUE, noSpaces = TRUE)
+
+```
+
+#Outcome metrics
+```{r outcomes}
+dta_run = dta_m %>%
+  mutate(logcost_md = log(cost_md+1),
+         logcost_er = log(cost_er+1),
+         logcost_hosp = log(cost_hosp+1),
+         logcost_pcp = log(cost_pcp+1),
+         logcost_spec = log(cost_spec+1),
+         logcost_mh = log(cost_mh+1),
+         logcost_pt = log(cost_pt+1),
+         logcost_rx = log(cost_rx+1),
+         logcost_drugadmin = log(cost_drugadmin + 1),
+         logcost_surg = log(cost_surg+1),
+         logcost_maternity = log(cost_maternity+1),
+         logcost_labs = log(cost_labs+1),
+         logcost_rads = log(cost_rads +1),
+        logcount_er = log(count_er+1),
+        logcount_hosp = log(count_hosp+1),
+        logcount_pcp = log(count_pcp+1),
+        logcount_spec = log(count_spec+1),
+        logcount_mh = log(count_mh+1),
+        logcount_pt = log(count_pt+1),
+        logcount_drugadmin = log(count_drugadmin+1),
+        logcount_surg = log(count_surg+1),
+        logcount_maternity = log(count_maternity+1),
+        logcount_labs = log(count_labs+1),
+        logcount_rads = log(count_rads+1),
+        logcost_per_er = log(cost_per_er+1),
+        logcost_per_hosp = log(cost_per_hosp+1),
+        logcost_per_pcp = log(cost_per_pcp+1),
+        logcost_per_spec = log(cost_per_spec+1),
+        logcost_per_mh = log(cost_per_mh+1),
+        logcost_per_pt = log(cost_per_pt+1),
+        logcost_per_drugadmin = log(cost_per_drugadmin+1),
+        logcost_per_surg = log(cost_per_surg+1),
+        logcost_per_maternity = log(cost_per_maternity+1),
+        logcost_per_labs = log(cost_per_labs+1),
+        logcost_per_rads = log(cost_per_rads+1)
+        )
+
+
+
+```
+
+
+```{r table 1}
+# pre-match
+prem = spacex_dat_ana %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+
+
+pretable = CreateTableOne(data =prem, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,  "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads", "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag", test =T)
+pretab = print(pretable, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+
+
+
+# post-match
+postm = dta_m %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+
+
+posttable = CreateTableOne(data =postm, vars = c("age", "female", "hcc", "mm",  "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads","count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag", test = T)
+posttab = print(posttable, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+
+
+# ctr vs offsite
+ctrm = dta_m %>%
+  filter(om_flag==1) %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+
+
+ctrmtable = CreateTableOne(data =ctrm, vars = c("age", "female", "hcc", "mm",  "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads","count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="ctr_flag", test = T)
+ctrtab = print(ctrmtable, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+
+topconds_om = table(spacex_dat_ana$ccs[spacex_dat_ana$om_flag==1 & ((spacex_dat_ana$CPT>= 99210 & spacex_dat_ana$CPT<=99215) | (spacex_dat_ana$CPT>= 99200 & spacex_dat_ana$CPT<=99205))])/length(spacex_dat_ana$ccs[spacex_dat_ana$om_flag==1 & ((spacex_dat_ana$CPT>= 99210 & spacex_dat_ana$CPT<=99215) | (spacex_dat_ana$CPT>= 99200 & spacex_dat_ana$CPT<=99205))])
+
+topconds_con = table(spacex_dat_ana$ccs[spacex_dat_ana$om_flag==0 & ((spacex_dat_ana$CPT>= 99210 & spacex_dat_ana$CPT<=99215) | (spacex_dat_ana$CPT>= 99200 & spacex_dat_ana$CPT<=99205))])/length(spacex_dat_ana$ccs[spacex_dat_ana$om_flag==0 & ((spacex_dat_ana$CPT>= 99210 & spacex_dat_ana$CPT<=99215) | (spacex_dat_ana$CPT>= 99200 & spacex_dat_ana$CPT<=99205))])
+
+```
+
+
+
+#Treatment effect 
+
+```{r ate}
+
+glmMatched1 <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+glmMatched2 <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+glmMatched3 <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+glmMatched4 <- glm(formula = logcost_pcp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+glmMatched5 <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+
+glmMatched5a <- glm(formula = logcost_mh ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                    data    = dta_run)
+
+
+glmMatched5b <- glm(formula = logcost_pt ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+
+
+glmMatched6 <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+
+glmMatched6a <- glm(formula = logcost_drugadmin ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+glmMatched6b <- glm(formula = logcost_surg ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                   data    = dta_run)
+glmMatched6c <- glm(formula = logcost_maternity ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                   data    = dta_run)
+glmMatched6d <- glm(formula = logcost_labs ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+glmMatched6e <- glm(formula = logcost_rads ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+
+glmMatched7 <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+
+glmMatched8 <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+
+glmMatched9 <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+glmMatched10 <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                    data    = dta_run)
+
+
+
+glmMatched10a <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run)
+
+
+
+glmMatched10b <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                     data    = dta_run)
+
+
+glmMatched10c <- glm(formula = logcount_drugadmin ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+glmMatched10d <- glm(formula = logcount_surg ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+glmMatched10e <- glm(formula = logcount_maternity ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+glmMatched10f <- glm(formula = logcount_labs ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+glmMatched10g <- glm(formula = logcount_rads ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+
+
+glmMatched11 <- glm(formula = logcost_per_er ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+glmMatched11b <- glm(formula = logcost_per_hosp ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                   data    = dta_run)
+
+glmMatched11c <- glm(formula = logcost_per_pcp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+
+glmMatched5c <- glm(formula = logcost_per_spec ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run)
+
+
+glmMatched5ca <- glm(formula = logcost_per_mh ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+
+
+glmMatched5cb <- glm(formula = logcost_per_pt ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+
+
+
+glmMatched5cc <- glm(formula = logcost_per_drugadmin ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+
+glmMatched5cd <- glm(formula = logcost_per_surg ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+
+glmMatched5ce <- glm(formula = logcost_per_maternity ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+
+glmMatched5cf <- glm(formula = logcost_per_labs ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                    data    = dta_run)
+
+glmMatched5cg <- glm(formula = logcost_per_rads ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run)
+
+
+```
+
+##Results as percentage change in each outcome
+
+
+```{r coef}
+
+exponentiate <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1, glmMatched2, glmMatched3, glmMatched4, glmMatched5, glmMatched5a, glmMatched5b, glmMatched6,glmMatched6a,glmMatched6b,glmMatched6c,glmMatched6d,glmMatched6e,
+          title="Spending", 
+          type = "html",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate, apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table1.htm")
+
+stargazer::stargazer(glmMatched7, glmMatched8, glmMatched9, glmMatched10, glmMatched10a, glmMatched10b,glmMatched10c,glmMatched10d,glmMatched10e,glmMatched10f,glmMatched10g,
+          title="Utilization", 
+          type = "html",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table2.htm")
+
+stargazer::stargazer(glmMatched11, glmMatched11b, glmMatched11c, glmMatched5c, glmMatched5ca, glmMatched5cb,  glmMatched5cc,  glmMatched5cd,  glmMatched5ce,  glmMatched5cf,  glmMatched5cg, 
+          title="Cost per Utilization", 
+          type = "html",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table3.htm")
+
+evalues.OLS(est = glmMatched1$coefficients[2],
+se = summary(glmMatched1)$coefficients['om_flag','Std. Error'],
+sd = sd(dta_run$logcost_md) )
+
+
+
+
+```
+
+
+#Sensitivity analyses:
+- exclude NICU and newborns, dialysis, pregnancy, hospice, rehab, and transplants
+- cap claimants to $50k/12mo
+- exclude those without a min # of member-months: 12
+- remove CCS codes 10 and 256
+
+```{r sens1}
+
+sens_m = dta_run %>%
+  filter(age != 0,
+         diag1 != "Z992",
+         diag1 != "Z340",
+         diag1 != "Z515",
+         diag1 != "F0",
+         diag1 != "T86",
+         (cost_md/mm) < (50000/12),
+         mm>12,
+         ccs != 256,
+         ccs !=10) 
+
+
+postm = sens_m %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+
+
+posttable = CreateTableOne(data =postm, vars = c("age", "female", "hcc", "mm",  "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,   "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads","count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag", test = F)
+posttab = print(posttable, smd = TRUE, contDigits=3, catDigits=1, noSpaces = TRUE, quote = T)
+
+```
+
+#Sensitivity results 
+
+```{r ate1}
+
+glmMatched1_s <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+glmMatched2_s <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+glmMatched3_s <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+glmMatched4_s <- glm(formula = logcost_pcp ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+glmMatched5_s <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+
+glmMatched5a_s <- glm(formula = logcost_mh ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+
+
+glmMatched5b_s <- glm(formula = logcost_pt ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+
+
+glmMatched6_s <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+
+glmMatched6a_s <- glm(formula = logcost_drugadmin ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+glmMatched6b_s <- glm(formula = logcost_surg ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+glmMatched6c_s <- glm(formula = logcost_maternity ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+glmMatched6d_s <- glm(formula = logcost_labs ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+glmMatched6e_s <- glm(formula = logcost_rads ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+
+
+glmMatched7_s <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+
+glmMatched8_s <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+
+glmMatched9_s <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                   data    = sens_m)
+
+glmMatched10_s <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+
+
+
+glmMatched10a_s <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+
+
+glmMatched10b_s <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+
+glmMatched10c_s <- glm(formula = logcount_drugadmin ~ om_flag + age + female + mm + hcc + ccs+zip  ,
+                     data    = sens_m)
+glmMatched10d_s <- glm(formula = logcount_surg ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+glmMatched10e_s <- glm(formula = logcount_maternity ~ om_flag + age + female + mm + hcc + ccs+zip  ,
+                     data    = sens_m)
+glmMatched10f_s <- glm(formula = logcount_labs ~ om_flag + age + female + mm + hcc + ccs+zip  ,
+                     data    = sens_m)
+glmMatched10g_s <- glm(formula = logcount_rads ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+
+glmMatched11_s <- glm(formula = logcost_per_er ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                    data    = sens_m)
+
+glmMatched11b_s <- glm(formula = logcost_per_hosp ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+glmMatched11c_s <- glm(formula = logcost_per_pcp ~ om_flag + age + female + mm + hcc + ccs+zip  ,
+                     data    = sens_m)
+
+
+glmMatched5c_s <- glm(formula = logcost_per_spec ~ om_flag + age + female + mm + hcc + ccs+zip  ,
+                    data    = sens_m)
+
+
+glmMatched5ca_s <- glm(formula = logcost_per_mh ~ om_flag + age + female + mm + hcc + ccs+zip  ,
+                     data    = sens_m)
+
+
+glmMatched5cb_s <- glm(formula = logcost_per_pt ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+
+
+glmMatched5cc_s <- glm(formula = logcost_per_drugadmin ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+glmMatched5cd_s <- glm(formula = logcost_per_surg ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+glmMatched5ce_s <- glm(formula = logcost_per_maternity ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+glmMatched5cf_s <- glm(formula = logcost_per_labs ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+glmMatched5cg_s <- glm(formula = logcost_per_rads ~ om_flag + age + female + mm + hcc + ccs +zip ,
+                     data    = sens_m)
+
+
+```
+
+#Sens table results 
+
+
+```{r coef1}
+
+exponentiate_s <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1_s, glmMatched2_s, glmMatched3_s, glmMatched4_s, glmMatched5_s, glmMatched5a_s, glmMatched5b_s, glmMatched6_s,glmMatched6a_s,glmMatched6b_s,glmMatched6c_s,glmMatched6d_s,glmMatched6e_s,
+          title="Spending", 
+          type = "html",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate, apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table1s.htm")
+
+stargazer::stargazer(glmMatched7_s, glmMatched8_s, glmMatched9_s, glmMatched10_s, glmMatched10a_s, glmMatched10b_s,glmMatched10c_s,glmMatched10d_s,glmMatched10e_s,glmMatched10f_s,glmMatched10g_s,
+          title="Utilization", 
+          type = "html",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table2s.htm")
+
+stargazer::stargazer(glmMatched11_s, glmMatched11b_s, glmMatched11c_s, glmMatched5c_s, glmMatched5ca_s, glmMatched5cb_s,  glmMatched5cc_s,  glmMatched5cd_s,  glmMatched5ce_s,  glmMatched5cf_s,  glmMatched5cg_s, 
+          title="Cost per Utilization", 
+          type = "html",
+          keep=c("om_flag","age","female","mm","hcc"),
+          ci=TRUE, ci.level=0.95,
+          apply.coef=exponentiate,apply.se = exponentiate,
+          digits = 1, 
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+          out = "table3s.htm")
+
+save.image("onemedical.RData")
+
+
+```
+
+
+
+### alternative control group of non-spaceX members to compare OM-SpaceX users
+
+```{r alt control}
+
+clm_alt = clm_tot %>%
+  filter(om_flag==1)
+setwd("~/Box/Analytics Team/Research/Research projects/One medical")
+clm_cont = read_csv("spacex_controls.csv")
+
+clm_dol2 = clm_cont
+clm_dol2$`Metaclaims Analytics Medical Allowed Amount` = as.numeric(gsub("[\\$,]", "", clm_dol2$`Metaclaims Analytics Medical Allowed Amount`))
+clm_dol2$`Metaclaims Analytics Medical First Name` = str_to_title(clm_dol2$`Metaclaims Analytics Medical First Name`)
+clm_dol2$`Metaclaims Analytics Medical Last Name` = str_to_title(clm_dol2$`Metaclaims Analytics Medical Last Name`)
+
+clm_sub2 = clm_dol2 %>%
+  mutate(personid = (`Metaclaims Analytics Medical Person ID`),
+         female = (`Metaclaims Analytics Medical Gender`=="F"),
+         firstname = `Metaclaims Analytics Medical First Name`,
+         lastname = `Metaclaims Analytics Medical Last Name`,
+         pos = `Metaclaims Analytics Medical Service Category Detail`,
+         dos = `Metaclaims Analytics Medical Service Date Start Date`,
+         om_flag = ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460695495")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467701821))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="460741732")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073862256))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="362169147")&(`Metaclaims Analytics Medical Billing Prov Npi`==1336709112))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="814542216")&(`Metaclaims Analytics Medical Billing Prov Npi`==1518438712))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="383906267")&(`Metaclaims Analytics Medical Billing Prov Npi`==1528538774))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="471708588")&(`Metaclaims Analytics Medical Billing Prov Npi`==1184014854))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="271346767")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467781641))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="911942315")&(`Metaclaims Analytics Medical Billing Prov Npi`==1073553947))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812141065")&(`Metaclaims Analytics Medical Billing Prov Npi`==1467800383))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="452282261")&(`Metaclaims Analytics Medical Billing Prov Npi`==1962798645))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="273009385")&(`Metaclaims Analytics Medical Billing Prov Npi`==1861709487))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="812980907")&(`Metaclaims Analytics Medical Billing Prov Npi`==1598214397))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="270243800")&(`Metaclaims Analytics Medical Billing Prov Npi`==1144457151))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="020619758")&(`Metaclaims Analytics Medical Billing Prov Npi`==1497786883))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="461773122")&(`Metaclaims Analytics Medical Billing Prov Npi`==1508103169))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1417382102))|
+           ((`Metaclaims Analytics Medical Billing Prov Bill ID`=="800925565")&(`Metaclaims Analytics Medical Billing Prov Npi`==1922470392)),
+         em_flag = ((`Metaclaims Analytics Medical Procedure Code`=='99201')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99202')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99203')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99204')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99205')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99211')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99212')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99213')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99214')|
+                      (`Metaclaims Analytics Medical Procedure Code`=='99215')),
+         diag1 = (`Metaclaims Analytics Medical Principal Diag`),
+         cost_md = (`Metaclaims Analytics Medical Allowed Amount`)) %>%
+  filter(dos<="2019-07-01") 
+
+
+
+clm_sub2 = clm_sub2 %>%
+  group_by(firstname, lastname,female) %>%
+#  filter(any(em_flag==1)) %>%
+  summarise(om_flag = getmode(om_flag[em_flag==1]),
+            diag1 = getmode(diag1),
+            count_drugadmin = sum((pos=="Administered drug inc Chemo")|(pos=="Administration of drug")|(pos=="Immunizations")),
+            cost_drugadmin =sum((cost_md[pos=="Administered drug inc Chemo"|pos=="Administration of drug"|(pos=="Immunizations")])),
+            cost_per_drugadmin = mean((cost_md[pos=="Administered drug inc Chemo"|pos=="Administration of drug"|(pos=="Immunizations")]),na.rm=T),
+            count_surg = sum((pos=="Anesthesia")|(pos=="Outpatient Surgery")|(pos=="Surgery")|(pos=="Surgical and Transplant")),
+            cost_surg = sum(cost_md[(pos=="Anesthesia")|(pos=="Outpatient Surgery")|(pos=="Surgery")|(pos=="Surgical and Transplant")]),
+            cost_per_surg = mean(cost_md[(pos=="Anesthesia")|(pos=="Outpatient Surgery")|(pos=="Surgery")|(pos=="Surgical and Transplant")],na.rm=T),
+            count_maternity = sum(pos=="Labor and Delivery" | pos=="Newborns"),
+            cost_maternity = sum(cost_md[(pos=="Labor and Delivery" | pos=="Newborns")]),
+            cost_per_maternity = mean(cost_md[(pos=="Labor and Delivery" | pos=="Newborns")],na.rm=T),
+            count_labs = sum(pos=="Lab Pathology" | pos=="Pathology Lab"),
+            cost_labs = sum(cost_md[(pos=="Lab Pathology" | pos=="Pathology Lab")]),
+            cost_per_labs = mean(cost_md[(pos=="Lab Pathology" | pos=="Pathology Lab")],na.rm=T),
+            count_er = sum(pos=="Emergency Room"),
+            cost_er = sum(cost_md[pos=="Emergency Room"]),
+            cost_per_er = mean(cost_md[pos=="Emergency Room"],na.rm=T),
+            count_rads = sum(pos=="Radiology"),
+            cost_rads = sum(cost_md[pos=="Radiology"]),
+            cost_per_rads = mean(cost_md[pos=="Radiology"],na.rm=T),
+            count_hosp = sum(pos=="Inpatient Visits"|pos=="Medical"),
+            cost_hosp = sum(cost_md[pos=="Inpatient Visits"|pos=="Medical"]),
+            cost_per_hosp = mean(cost_md[pos=="Inpatient Visits"|pos=="Medical"],na.rm=T),
+            count_pcp = sum(((pos=="Office Visits - PCP")|(pos=="Preventive Visits - PCP"))),
+            cost_pcp = sum((cost_md[(pos=="Office Visits - PCP"|pos=="Preventive Visits - PCP")])),
+            cost_per_pcp = mean((cost_md[(pos=="Office Visits - PCP"|pos=="Preventive Visits - PCP")]),na.rm=T),
+            count_spec = sum((pos=="Office Visits - Specialist")|(pos=="Preventive Visits - Specialist")),
+            cost_spec = sum((cost_md[pos=="Office Visits - Specialist"|pos=="Preventive Visits - Specialist"])),
+            cost_per_spec = mean((cost_md[pos=="Office Visits - Specialist"|pos=="Preventive Visits - Specialist"]),na.rm=T),
+            count_mh = sum(pos=="Mental Health and Substance Use" | pos=="Psychiatry"),
+            cost_mh = sum(cost_md[pos=="Mental Health and Substance Use" | pos=="Psychiatry"]),
+            cost_per_mh = mean(cost_md[pos=="Mental Health and Substance Use" | pos=="Psychiatry"], na.rm=T),
+            count_pt = sum(pos=="Physical Medicine"),
+            cost_pt = sum(cost_md[pos=="Physical Medicine"]),
+            cost_per_pt =  mean(cost_md[pos=="Physical Medicine"], na.rm=T),
+            cost_other = sum(cost_md[(pos!="Administered drug inc Chemo")|(pos!="Administration of drug")|(pos!="Immunizations")|(pos!="Anesthesia")|(pos!="Outpatient Surgery")|(pos!="Surgery")|(pos!="Surgical and Transplant")|(pos!="Labor and Delivery") | (pos!="Newborns")|(pos!="Lab Pathology") | (pos!="Pathology Lab")|(pos!="Emergency Room")|(pos!="Radiology")|(pos!="Inpatient Visits")|(pos!="Medical")|(pos!="Inpatient Visits")|(pos!="Medical")|(pos!="Office Visits - PCP")|(pos!="Preventive Visits - PCP")|(pos!="Office Visits - Specialist")|(pos!="Preventive Visits - Specialist")|(pos!="Mental Health and Substance Use" | pos!="Psychiatry")|(pos!="Physical Medicine")]),
+            cost_md = sum(cost_other+cost_drugadmin+cost_surg+cost_maternity+cost_labs+cost_er+cost_rads+cost_hosp+cost_pcp+cost_spec+cost_mh+cost_pt)) %>%   
+  select(firstname,lastname, female,om_flag,diag1,cost_md,count_er,cost_er,count_hosp,cost_hosp,count_pcp,cost_pcp,count_spec,cost_spec,count_mh,cost_mh,count_pt,cost_pt, count_drugadmin,cost_drugadmin,count_surg,cost_surg,count_maternity,cost_maternity,count_labs,cost_labs,count_rads,cost_rads,cost_per_drugadmin, cost_per_surg,cost_per_maternity,cost_per_labs,cost_per_er,cost_per_rads,cost_per_hosp,cost_per_pcp,cost_per_spec,cost_per_mh,cost_per_pt) %>%
+  filter(!any(om_flag)==1) %>%
+  ungroup()
+clm_sub2$female[is.na(clm_sub2$female)==1]=0
+
+
+clm_tot2 = bind_rows(clm_alt,clm_sub2) 
+
+mbr_alt = read_csv("spacex_controls_mbr.csv")
+
+mbr_sub2 = mbr_alt %>%
+  filter(str_detect(`Analytics Member Months Current Postal Code`,"9$")==T)
+mbr_sub2$`Analytics Member Months First Name` = str_to_title(mbr_sub2$`Analytics Member Months First Name`)
+mbr_sub2$`Analytics Member Months Last Name` = str_to_title(mbr_sub2$`Analytics Member Months Last Name`)
+
+mbr_sub2 = mbr_sub2 %>%
+  mutate(personid = `Analytics Member Months Person ID`) %>%
+  group_by(personid) %>%
+  mutate(start = min(`Analytics Member Months Start Date`),
+         end = max(`Analytics Member Months End Date`),
+         age = mean(`Analytics Member Months Age`),
+         female = (`Analytics Member Months Gender`=='F'),
+         firstname = `Analytics Member Months First Name`,
+         lastname = `Analytics Member Months Last Name`,
+         membermo = interval(start,end)/months(1),
+         DOB = `Analytics Member Months Date of Birth Date`,
+         zip = as.factor(`Analytics Member Months Current Postal Code`)) %>%
+  select(age, female, personid, firstname, lastname, membermo, DOB, zip) %>%
+  distinct()
+
+mbr_sub2 = bind_rows(mbr_sub,mbr_sub2) 
+
+rx_alt = read_csv("spacex_controls_rx.csv")
+
+
+rx_dol2 = rx_alt
+rx_dol2$`Analytics Claims Pharmacy Allowed Amount` = as.numeric(gsub("[\\$,]", "", rx_dol2$`Analytics Claims Pharmacy Allowed Amount`))
+rx_dol2$`Analytics Claims Pharmacy First Name` = str_to_title(rx_dol2$`Analytics Claims Pharmacy First Name`)
+rx_dol2$`Analytics Claims Pharmacy Last Name` = str_to_title(rx_dol2$`Analytics Claims Pharmacy Last Name`)
+
+rx_alt = rx_dol2 %>%
+  mutate(personid = `Analytics Claims Pharmacy Person ID`) %>%
+  group_by(personid) %>%
+  mutate(female = (`Analytics Claims Pharmacy Gender`=="F"),
+         firstname = `Analytics Claims Pharmacy First Name`,
+         lastname = `Analytics Claims Pharmacy Last Name`,
+         cost_rx = sum(`Analytics Claims Pharmacy Allowed Amount`)) %>%
+  select(female, personid, firstname,lastname,cost_rx) %>%
+  distinct()
+rx_sub2 = rbind(rx_sub,rx_alt)
+
+rx_sub2 = bind_rows(rx_sub,rx_sub2) 
+
+
+spacex_dat2 = mbr_sub2 %>% 
+  full_join(clm_tot2, by = c("firstname","lastname","female")) %>%
+  full_join(rx_sub2, by = c("firstname","lastname","female")) %>%
+  mutate(om_flag = replace_na(om_flag,0)) %>%
+  distinct()
+
+PERSON2 = spacex_dat2 %>%
+  ungroup() %>%
+  mutate(HICNO = personid.x,
+         SEX = if_else(female==1,"F","M"),
+         DOB = DOB,
+         MCAID = 0,
+         NMCAID = 0,
+         OREC = 0) %>%
+  select(HICNO, SEX, MCAID, NMCAID, OREC, DOB) %>% 
+  filter(!is.na(HICNO))
+
+cmshcc_map <- load_cmshcc_map()
+
+clm2 <- rbind(clm,clm_cont)
+
+clm_hcc2  = clm2 %>%
+  mutate(HICNO = (`Metaclaims Analytics Medical Person ID`),
+         diag1 = `Metaclaims Analytics Medical Principal Diag`,
+         diag2 = `Metaclaims Analytics Medical Diag02`,
+         diag3 = `Metaclaims Analytics Medical Diag03`,
+         diag4 = `Metaclaims Analytics Medical Diag04`,
+         diag5 = `Metaclaims Analytics Medical Diag05`,
+         diag6 = `Metaclaims Analytics Medical Diag06`,
+         diag7 = `Metaclaims Analytics Medical Diag07`,
+         diag8 = `Metaclaims Analytics Medical Diag08`,
+         diag9 = `Metaclaims Analytics Medical Diag09`,
+         diag10 = `Metaclaims Analytics Medical Diag10`) %>%
+  gather(Diag, DX, diag1:diag10, factor_key=T) %>%
+  select(HICNO,DX) %>%
+  arrange(HICNO)  %>% 
+  filter(!is.na(HICNO), !is.na(DX)) %>%
+  distinct()
+
+DIAG2 = bind_rows(clm_hcc2, ctr_hcc)
+
+hcc2 = evaluate_v22_2017(PERSON2, DIAG2, "Community_NonDual_Aged")
+
+
+spacex_dat_ana2 = mbr_sub2 %>% 
+  full_join(clm_tot2, by = c("firstname","lastname","female")) %>%
+  full_join(rx_sub2, by = c("firstname","lastname","female")) %>%
+  full_join(hcc2, by = c("personid.x" = "HICNO")) %>%
+  left_join(ccs, c("diag1")) %>%
+  distinct() %>%
+  filter(!is.na(personid.x)) %>%
+  mutate(mm = membermo,
+         om_flag = replace_na(om_flag,0),
+         cost_md = replace_na(cost_md,0),
+         count_er = replace_na(count_er,0),
+         cost_er = replace_na(cost_er,0),
+         count_hosp = replace_na(count_hosp,0),
+         cost_hosp = replace_na(cost_hosp,0),
+         count_pcp = replace_na(count_pcp,0),
+         cost_pcp = replace_na(cost_pcp,0),
+         count_spec = replace_na(count_spec,0),
+         cost_spec = replace_na(cost_spec,0),
+         count_mh = replace_na(count_mh,0),
+         count_pt = replace_na(count_pt,0),
+         cost_pt = replace_na(cost_pt,0),
+         cost_mh = replace_na(cost_mh,0),
+         cost_rx = replace_na(cost_rx,0),
+         cost_md = (cost_md+cost_rx)/mm,
+         cost_rx = (cost_rx)/mm, 
+         cost_er = (cost_er)/mm,
+         cost_hosp = (cost_hosp)/mm,
+         cost_pcp = (cost_pcp)/mm,
+         cost_spec = (cost_spec)/mm,
+         cost_mh = (cost_mh)/mm,
+         cost_pt = (cost_pt)/mm,
+         count_er = (count_er)/mm,
+         count_hosp = (count_hosp)/mm,
+         count_pcp = (count_pcp)/mm,
+         count_spec = (count_spec)/mm,
+         count_mh = (count_mh)/mm,
+         count_pt = (count_pt)/mm,
+         count_drugadmin = (count_drugadmin)/mm,
+         cost_drugadmin = (cost_drugadmin)/mm,
+         count_surg = (count_surg)/mm,
+         cost_surg = (cost_surg)/mm,
+         count_maternity = (count_maternity)/mm,
+         cost_maternity = (cost_maternity)/mm,
+         count_labs = (count_labs)/mm,
+         cost_labs = (cost_labs)/mm,
+         count_rads = (count_rads)/mm,
+         cost_rads = (cost_rads)/mm,
+         count_drugadmin = replace_na(count_drugadmin,0),
+         cost_drugadmin = replace_na(cost_drugadmin,0),
+         count_surg = replace_na(count_surg,0),
+         cost_surg = replace_na(cost_surg,0),
+         count_maternity = replace_na(count_maternity,0),
+         cost_maternity = replace_na(cost_maternity,0),
+         count_labs = replace_na(count_labs,0),
+         cost_labs = replace_na(cost_labs, 0),
+         count_rads = replace_na(count_rads, 0),
+         cost_rads = replace_na(cost_rads,0),
+         Community_NonDual_Aged = replace_na(Community_NonDual_Aged,0),
+         hcc = Community_NonDual_Aged,
+         ccs = replace_na(ccs,0),
+         mm = membermo,
+         ccs = as.factor(ccs),
+         zip = as.factor(zip)) 
+
+
+
+summary(spacex_dat_ana2)
+
+
+spacex_dat_cov <- c('age', 'female', 'mm', 'membermo', 'hcc', 'ccs', 'diag1',  'zip')
+
+tempData2 = mice(spacex_dat_ana2, m = 1, maxit = 1, meth = 'cart', seed = 1)
+spacex_dat_nomiss2 <- as.data.frame(complete(tempData2,1))
+summary(spacex_dat_nomiss2)
+
+
+spacex_dat_nomiss2 = spacex_dat_nomiss2 %>%
+  mutate(diag1=replace_na(diag1,0),
+         zip = replace_na(zip,0),
+         ccs = replace_na(ccs,0),
+         CPT = replace_na(CPT,0))
+spacex_dat_nomiss2$zip <- substr(spacex_dat_nomiss2$zip, 0, 3)
+
+#spacex_dat_nomiss2 = spacex_dat_nomiss2[complete.cases(spacex_dat_nomiss2),]
+#spacex_dat_nomiss2 = as.data.frame(spacex_dat_nomiss2)
+
+
+
+
+start_time <- Sys.time()
+
+set.seed(1)
+mod_match2 <- matchit(om_flag ~ age + female + ccs + hcc + mm ,
+                     method = "nearest", data = spacex_dat_nomiss2, caliper = .10)
+end_time <- Sys.time()
+
+end_time - start_time
+
+mod_match2
+
+dta_m2 <- match.data(mod_match2)
+dim(dta_m2)
+
+dta_m2 %>%
+  group_by(om_flag) %>%
+  select(one_of(spacex_dat_cov)) %>%
+  summarise_all(funs(mean))
+
+#print(CreateTableOne(vars = c("age", "female", "hcc", "mm", "ccs", "zip"), strata = "om_flag", data = dta_m2, test = T), smd = TRUE, noSpaces = TRUE)
+
+dta_run2 = dta_m2 %>%
+  mutate(logcost_md = log(cost_md+1),
+         logcost_er = log(cost_er+1),
+         logcost_hosp = log(cost_hosp+1),
+         logcost_pcp = log(cost_pcp+1),
+         logcost_spec = log(cost_spec+1),
+         logcost_mh = log(cost_mh+1),
+         logcost_pt = log(cost_pt+1),
+         logcost_rx = log(cost_rx+1),
+         logcost_drugadmin = log(cost_drugadmin + 1),
+         logcost_surg = log(cost_surg+1),
+         logcost_maternity = log(cost_maternity+1),
+         logcost_labs = log(cost_labs+1),
+         logcost_rads = log(cost_rads +1),
+         logcount_er = log(count_er+1),
+         logcount_hosp = log(count_hosp+1),
+         logcount_pcp = log(count_pcp+1),
+         logcount_spec = log(count_spec+1),
+         logcount_mh = log(count_mh+1),
+         logcount_pt = log(count_pt+1),
+         logcount_drugadmin = log(count_drugadmin+1),
+         logcount_surg = log(count_surg+1),
+         logcount_maternity = log(count_maternity+1),
+         logcount_labs = log(count_labs+1),
+         logcount_rads = log(count_rads+1),
+         logcost_per_er = log(cost_per_er+1),
+         logcost_per_hosp = log(cost_per_hosp+1),
+         logcost_per_pcp = log(cost_per_pcp+1),
+         logcost_per_spec = log(cost_per_spec+1),
+         logcost_per_mh = log(cost_per_mh+1),
+         logcost_per_pt = log(cost_per_pt+1),
+         logcost_per_drugadmin = log(cost_per_drugadmin+1),
+         logcost_per_surg = log(cost_per_surg+1),
+         logcost_per_maternity = log(cost_per_maternity+1),
+         logcost_per_labs = log(cost_per_labs+1),
+         logcost_per_rads = log(cost_per_rads+1)
+  )
+
+
+
+
+```
+
+```{r match2}
+prem2 = spacex_dat_ana2 %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+pretable2 = CreateTableOne(data =prem2, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,  "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads", "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag", test = F)
+pretab2 = print(pretable2, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+
+postm2 = dta_run2 %>%
+  mutate(count_er = 1000*count_er,
+         count_hosp = 1000*count_hosp,
+         count_pcp = 1000*count_pcp,
+         count_spec = 1000*count_spec,
+         count_mh = 1000*count_mh,
+         count_pt = 1000*count_pt,
+         count_drugadmin = 1000*count_drugadmin,
+         count_surg = 1000*count_surg,
+         count_maternity = 1000*count_maternity,
+         count_labs = 1000*count_labs,
+         count_rads = 1000*count_rads
+  )
+posttable2 = CreateTableOne(data =postm2, vars = c("age", "female", "hcc", "mm", "cost_md", "cost_rx", "cost_er" ,"cost_hosp" , "cost_pcp"  , "cost_spec"  ,"cost_mh" ,"cost_pt" ,  "cost_drugadmin","cost_surg","cost_maternity","cost_labs","cost_rads", "count_er"  , "count_hosp" ,"count_pcp" ,"count_spec", "count_mh",   "count_pt"  , "count_drugadmin","count_surg","count_maternity","count_labs","count_rads", "cost_per_er", "cost_per_hosp", "cost_per_pcp","cost_per_spec","cost_per_mh","cost_per_pt" ,"cost_per_drugadmin","cost_per_surg"   ,"cost_per_maternity" ,"cost_per_labs", "cost_per_rads"), strata="om_flag", test = F)
+posttab2 = print(posttable2, smd = TRUE, contDigits=1, catDigits=1, noSpaces = TRUE, quote = T)
+
+```
+
+
+# regs
+
+```{r ate2}
+
+glmMatched1_c <- glm(formula = logcost_md ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+glmMatched2_c <- glm(formula = logcost_er ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+glmMatched3_c <- glm(formula = logcost_hosp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+glmMatched4_c <- glm(formula = logcost_pcp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+glmMatched5_c <- glm(formula = logcost_spec ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+
+glmMatched5a_c <- glm(formula = logcost_mh ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                    data    = dta_run2)
+
+
+glmMatched5b_c <- glm(formula = logcost_pt ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run2)
+
+
+glmMatched6_c <- glm(formula = logcost_rx ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+
+glmMatched6a_c <- glm(formula = logcost_drugadmin ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run2)
+glmMatched6b_c <- glm(formula = logcost_surg ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                    data    = dta_run2)
+glmMatched6c_c <- glm(formula = logcost_maternity ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                    data    = dta_run2)
+glmMatched6d_c <- glm(formula = logcost_labs ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run2)
+glmMatched6e_c <- glm(formula = logcost_rads ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run2)
+
+
+glmMatched7_c <- glm(formula = logcount_er ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+
+glmMatched8_c <- glm(formula = logcount_hosp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+
+glmMatched9_c <- glm(formula = logcount_pcp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                   data    = dta_run2)
+
+glmMatched10_c <- glm(formula = logcount_spec ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                    data    = dta_run2)
+
+
+
+glmMatched10a_c <- glm(formula = logcount_mh ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+
+
+glmMatched10b_c <- glm(formula = logcount_pt ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                     data    = dta_run2)
+
+
+glmMatched10c_c <- glm(formula = logcount_drugadmin ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+glmMatched10d_c <- glm(formula = logcount_surg ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+glmMatched10e_c <- glm(formula = logcount_maternity ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+glmMatched10f_c <- glm(formula = logcount_labs ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+glmMatched10g_c <- glm(formula = logcount_rads ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+
+glmMatched11_c <- glm(formula = logcost_per_er ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run2)
+
+glmMatched11b_c <- glm(formula = logcost_per_hosp ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                     data    = dta_run2)
+
+glmMatched11c_c <- glm(formula = logcost_per_pcp ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+
+glmMatched5c_c <- glm(formula = logcost_per_spec ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                    data    = dta_run2)
+
+
+glmMatched5ca_c <- glm(formula = logcost_per_mh ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+
+glmMatched5cb_c <- glm(formula = logcost_per_pt ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+
+
+glmMatched5cc_c <- glm(formula = logcost_per_drugadmin ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+glmMatched5cd_c <- glm(formula = logcost_per_surg ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+glmMatched5ce_c <- glm(formula = logcost_per_maternity ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+glmMatched5cf_c <- glm(formula = logcost_per_labs ~ om_flag + age + female + mm + hcc + ccs+ zip  ,
+                     data    = dta_run2)
+
+glmMatched5cg_c <- glm(formula = logcost_per_rads ~ om_flag + age + female + mm + hcc + ccs + zip ,
+                     data    = dta_run2)
+
+
+```
+
+
+```{r coef alt cont}
+
+exponentiate <- function(x) ((exp(x)-1)*100)
+
+stargazer::stargazer(glmMatched1_c, glmMatched2_c, glmMatched3_c, glmMatched4_c, glmMatched5_c, glmMatched5a_c, glmMatched5b_c, glmMatched6_c,glmMatched6a_c,glmMatched6b_c,glmMatched6c_c,glmMatched6d_c,glmMatched6e_c,
+                     title="Spending", 
+                     type = "html",
+                     keep=c("om_flag","age","female","mm","hcc"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate, apply.se = exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+                     column.labels = c("Total Spend", "Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Rx", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+                     out = "table1c.htm")
+
+stargazer::stargazer(glmMatched7_c, glmMatched8_c, glmMatched9_c, glmMatched10_c, glmMatched10a_c, glmMatched10b_c,glmMatched10c_c,glmMatched10d_c,glmMatched10e_c,glmMatched10f_c,glmMatched10g_c,
+                     title="Utilization", 
+                     type = "html",
+                     keep=c("om_flag","age","female","mm","hcc"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,apply.se = exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+                     column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+                     out = "table2c.htm")
+
+stargazer::stargazer(glmMatched11_c, glmMatched11b_c, glmMatched11c_c, glmMatched5c_c, glmMatched5ca_c, glmMatched5cb_c,  glmMatched5cc_c,  glmMatched5cd_c,  glmMatched5ce_c,  glmMatched5cf_c,  glmMatched5cg_c, 
+                     title="Cost per Utilization", 
+                     type = "html",
+                     keep=c("om_flag","age","female","mm","hcc"),
+                     ci=TRUE, ci.level=0.95,
+                     apply.coef=exponentiate,apply.se = exponentiate,
+                     digits = 1, 
+                     star.cutoffs = c(0.05, 0.01, 0.001),
+                     column.labels = c("Emergency", "Hospital", "Primary Care", "Specialist", "Mental Health", "Physical Therapy", "Drug admin", "Surgery", "Maternity", "Labs", "Radiology"),
+                     out = "table3c.htm")
+
+save.image("onemedical.RData")
+
+
+```
+
+
