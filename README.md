@@ -2,13 +2,13 @@
 
  Sanjay Basu1,2,3*, Tyler Zhang4, Alli Gilmore4, Esha Datta4, Eun Yeong Kim5
 
-1 Research and Analytics, Collective Health, San Francisco, California
-2 Center for Primary Care, Harvard Medical School, Boston, Massachusetts
+1 Center for Primary Care, Harvard Medical School, Boston, Massachusetts
+2 Research and Analytics, Collective Health, San Francisco, California
 3 School of Public Health, Imperial College, London, United Kingdom
 4 Enterprise Analytics, One Medical, San Francisco, California
 5 SpaceX, Hawthorne, California
 
-*sanjay.basu@collectivehealth.com
+*sanjay_basu@hms.harvard.edu
 
 Primary care clinical services are increasingly deployed at or near workplaces, and subsidized by employers.
 
